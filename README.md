@@ -28,6 +28,13 @@ Push em `main` e pull requests executam lint e build (`npm ci`, `npm run lint`, 
 - Framework **Vite**, output **`dist`**.
 - O arquivo `vercel.json` garante SPA (rewrite para `/index.html` exceto `/api/*`) e cabeçalhos de segurança.
 - Mantenha **Node.js Version 22.x** iguais ao painel principal.
-- Envie apenas variáveis necessárias (ver `.env.example`).
+- Repositório GitHub: [github.com/2as-inteligencia-financeira/painel-2as-orcamento](https://github.com/2as-inteligencia-financeira/painel-2as-orcamento) (deploy conectado ao projeto **2as-orcamento**).
 
-Para o menu “Módulo Orçamento” no painel de inteligência financeira funcionar, a URL pública deste deploy deve constar como **`VITE_URL_MODULO_ORCAMENTO`** no projeto do painel principal.
+### Variáveis de ambiente (produção)
+
+| Variável | Uso |
+|----------|-----|
+| `VITE_ORCAMENTO_API_BASE` | Opcional — prefixo da API quando existir. |
+| `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` | **Opcional mas recomendado:** copie do projeto **luniq-hub** na Vercel (mesmas chaves do Hub). Com as duas definidas, o app ativa login + SSO ao abrir a partir do [Hub](https://app.2asfinancas.com/dashboard). Se **não** existirem, o build abre o módulo em modo demo (sem tela de login). |
+
+Para o menu “Módulo Orçamento” no painel de inteligência financeira: defina **`VITE_URL_MODULO_ORCAMENTO`** = URL pública deste app (ex.: `https://2as-orcamento.vercel.app`) no projeto **luniq-painel**.
