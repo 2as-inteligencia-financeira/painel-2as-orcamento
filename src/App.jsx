@@ -129,7 +129,7 @@ function TopMenu({ page, setPage }) {
   );
 }
 
-function Header({ company, companies, setCompany, page, setPage, setModal }) {
+function Header({ company, companies, setCompany, page, setPage, setModal, sessionEmail, onSignOut }) {
   return (
     <header className="app-header">
       <div className="header-main">
@@ -139,6 +139,12 @@ function Header({ company, companies, setCompany, page, setPage, setModal }) {
         </button>
         <TopMenu page={page} setPage={setPage} />
         <div className="header-actions">
+          {typeof onSignOut === "function" && sessionEmail ? (
+            <>
+              <span className="header-user-email">{sessionEmail}</span>
+              <button className="link-btn" onClick={() => void onSignOut()} type="button">SAIR</button>
+            </>
+          ) : null}
           <select value={company.id} onChange={event => setCompany(companies.find(item => item.id === event.target.value))}>
             {companies.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
@@ -800,7 +806,7 @@ function Metric({ label, value, positive = false }) {
   return <div className="metric"><span>{label}</span><strong className={positive ? "positive" : ""}>{value}</strong></div>;
 }
 
-export default function App() {
+export default function App({ sessionEmail = null, onSignOut = null } = {}) {
   const [companies, setCompanies] = useState(companiesSeed);
   const [company, setCompany] = useState(companiesSeed[0]);
   const [page, setPage] = useState("overview");
@@ -837,7 +843,7 @@ export default function App() {
 
   return (
     <div className="granatum-shell">
-      <Header company={company} companies={companies} setCompany={setCompany} page={page} setPage={setPage} setModal={setModal} />
+      <Header company={company} companies={companies} setCompany={setCompany} page={page} setPage={setPage} setModal={setModal} sessionEmail={sessionEmail} onSignOut={onSignOut} />
       {pageNode}
       <button className="integration-pill" onClick={() => setPage("integration")} type="button"><Tags size={15} /> API para Painel de Inteligência</button>
       {activeModal && <EntryModal type={activeModal} onClose={() => setModal(null)} onSave={saveEntry} categories={categories} centers={centers} />}
