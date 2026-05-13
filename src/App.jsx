@@ -1,852 +1,1003 @@
-import { useMemo, useState } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Download } from "lucide-react";
 
-/** Base publicada da API REST lida pelo Painel de Inteligência (sem barra final). */
-const ORCAMENTO_API_BASE = String(import.meta.env.VITE_ORCAMENTO_API_BASE || "").replace(/\/$/, "");
-import {
-  ArrowLeftRight,
-  BarChart3,
-  Building2,
-  CalendarDays,
-  CheckCircle2,
-  Database,
-  FileDown,
-  FileInput,
-  FileOutput,
-  Fullscreen,
-  LayoutDashboard,
-  ListFilter,
-  Plus,
-  Printer,
-  Receipt,
-  Repeat2,
-  Search,
-  Settings2,
-  SplitSquareHorizontal,
-  Tags,
-  Users,
-} from "lucide-react";
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const REALIZED_THRU = 5; // índices 0-4 têm realizado (Jan-Mai)
 
-const months = ["01/2026", "02/2026", "03/2026", "04/2026", "05/2026", "06/2026", "07/2026", "08/2026", "09/2026", "10/2026", "11/2026", "12/2026"];
-const money = value => Number(value || 0).toLocaleString("pt-BR", { style:"currency", currency:"BRL", maximumFractionDigits:0 });
-const compactMoney = value => Number(value || 0).toLocaleString("pt-BR", { style:"currency", currency:"BRL", notation:"compact", maximumFractionDigits:1 });
-const pct = value => `${Number(value || 0).toFixed(1).replace(".", ",")}%`;
+const fmt  = v => Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtN = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const cmp  = v => { const n = Number(v||0); if(Math.abs(n)>=1e6) return `R$ ${(n/1e6).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1})} mi`; if(Math.abs(n)>=1e3) return `R$ ${(n/1e3).toLocaleString("pt-BR",{minimumFractionDigits:0,maximumFractionDigits:0})} mil`; return fmt(n); };
+const pct  = (a,b) => !b ? "–" : `${((a/b-1)*100).toFixed(1).replace(".",",")}%`;
+const uid  = () => Math.random().toString(36).slice(2,9);
+const sumV = v => (v??[]).reduce((a,x)=>a+(+x||0),0);
 
-const companiesSeed = [
-  { id:"2as", name:"2AS Inteligência Financeira", document:"12.345.678/0001-90", plan:"Completo", status:"Ativa", taxRegime:"Simples Nacional", modules:["operacao", "orcamento", "relatorios", "cadastros", "integracao"] },
-  { id:"orcamento", name:"Cliente Orçamento", document:"22.111.333/0001-44", plan:"Orçamento", status:"Implantação", taxRegime:"Lucro Presumido", modules:["orcamento", "relatorios", "cadastros", "integracao"] },
+// ─── Seções fixas ─────────────────────────────────────────────────────────────
+const SECTIONS = [
+  { id:"receitas",          label:"Receitas",          kind:"income"  },
+  { id:"despesas_fixas",    label:"Despesas Fixas",    kind:"expense" },
+  { id:"despesas_variaveis",label:"Despesas Variáveis",kind:"expense" },
 ];
 
-const accountsSeed = [
-  { id:"itau", group:"Bancos", name:"Itaú Principal", balance:826500 },
-  { id:"c6", group:"Bancos", name:"C6 Reserva", balance:214000 },
-  { id:"cartao", group:"Cartão de crédito", name:"Cartão Corporativo", balance:-62300 },
-  { id:"recebiveis", group:"Recebíveis", name:"Agenda de recebíveis", balance:388000 },
+// ─── Seed ─────────────────────────────────────────────────────────────────────
+const SEED_VERSIONS = [
+  { id:"v1", year:2026, name:"Base 2026",    status:"active" },
+  { id:"v2", year:2026, name:"Revisado Q2",  status:"draft"  },
 ];
 
-const categoriesSeed = [
-  { id:"receita", group:"Receitas", code:"1.01", name:"Receita de vendas", kind:"Receita" },
-  { id:"gateway", group:"Deduções", code:"2.01", name:"Taxas e gateways", kind:"Dedução" },
-  { id:"tributos", group:"Deduções", code:"2.02", name:"Tributos sobre receita", kind:"Automático" },
-  { id:"professores", group:"Custos", code:"3.01", name:"Professores e produção", kind:"Custo" },
-  { id:"marketing", group:"OPEX", code:"4.01", name:"Marketing e vendas", kind:"Despesa" },
-  { id:"pessoas", group:"OPEX", code:"4.02", name:"Pessoas", kind:"Despesa" },
-  { id:"tecnologia", group:"OPEX", code:"4.03", name:"Ferramentas e tecnologia", kind:"Despesa" },
-  { id:"financeiro", group:"FINEX", code:"5.01", name:"Despesas financeiras", kind:"Despesa" },
-  { id:"capex", group:"CAPEX", code:"6.01", name:"Investimentos", kind:"CAPEX" },
+const SEED_AREAS = [
+  { id:"a1",  vId:"v1", sId:"receitas",           name:"Faturamento" },
+  { id:"a2",  vId:"v1", sId:"despesas_fixas",     name:"Revenue Ops" },
+  { id:"a3",  vId:"v1", sId:"despesas_fixas",     name:"Acadêmico" },
+  { id:"a4",  vId:"v1", sId:"despesas_fixas",     name:"Tecnologia" },
+  { id:"a5",  vId:"v1", sId:"despesas_fixas",     name:"Operações & Financeiro" },
+  { id:"a6",  vId:"v1", sId:"despesas_fixas",     name:"Infraestrutura e Desp. Adm." },
+  { id:"a7",  vId:"v1", sId:"despesas_fixas",     name:"FINEX" },
+  { id:"a8",  vId:"v1", sId:"despesas_variaveis", name:"Revenue Ops Variável" },
+  { id:"a9",  vId:"v1", sId:"despesas_variaveis", name:"Acadêmico Variável" },
+  { id:"a10", vId:"v1", sId:"despesas_variaveis", name:"FINEX Variável" },
+  { id:"a11", vId:"v1", sId:"despesas_variaveis", name:"Devoluções" },
+  { id:"a12", vId:"v1", sId:"despesas_variaveis", name:"Tributos" },
 ];
 
-const centersSeed = [
-  { id:"receita", name:"Receita", manager:"Comercial" },
-  { id:"produto", name:"Produto e Ensino", manager:"Operação" },
-  { id:"growth", name:"Growth", manager:"Marketing" },
-  { id:"ops", name:"Gente e Operações", manager:"Administração" },
+const SEED_GROUPS = [
+  { id:"g1",  aId:"a2", name:"CRO",                    mgr:"" },
+  { id:"g2",  aId:"a2", name:"Marketing",               mgr:"" },
+  { id:"g3",  aId:"a2", name:"Jornalismo",              mgr:"" },
+  { id:"g4",  aId:"a2", name:"Suporte",                 mgr:"" },
+  { id:"g5",  aId:"a2", name:"Vendas",                  mgr:"" },
+  { id:"g6",  aId:"a2", name:"Ferramentas Rev Ops",     mgr:"" },
+  { id:"g7",  aId:"a2", name:"Mídia",                   mgr:"" },
+  { id:"g8",  aId:"a2", name:"Diversos Rev Ops",        mgr:"" },
+  { id:"g9",  aId:"a3", name:"Pessoas Acadêmico",       mgr:"" },
+  { id:"g10", aId:"a3", name:"Professores",             mgr:"" },
+  { id:"g11", aId:"a3", name:"Ferramentas Acadêmico",   mgr:"" },
+  { id:"g12", aId:"a3", name:"Diversos Acadêmico",      mgr:"" },
+  { id:"g13", aId:"a4", name:"CTO",                     mgr:"" },
+  { id:"g14", aId:"a4", name:"Pessoas Tecnologia",      mgr:"" },
+  { id:"g15", aId:"a4", name:"Ferramentas Tecnologia",  mgr:"" },
+  { id:"g16", aId:"a5", name:"Pessoas Op & Fin",        mgr:"" },
+  { id:"g17", aId:"a5", name:"Audiovisual",             mgr:"" },
+  { id:"g18", aId:"a5", name:"Benefícios",              mgr:"" },
+  { id:"g19", aId:"a5", name:"Ferramentas Op & Fin",    mgr:"" },
+  { id:"g20", aId:"a6", name:"Estrutura",               mgr:"" },
+  { id:"g21", aId:"a6", name:"Serviços Profissionais",  mgr:"" },
+  { id:"g22", aId:"a6", name:"Diversos Infra",          mgr:"" },
+  { id:"g23", aId:"a7", name:"Bancos",                  mgr:"" },
+  { id:"g24", aId:"a8", name:"Suporte Variável",        mgr:"" },
+  { id:"g25", aId:"a8", name:"Vendas Variável",         mgr:"" },
+  { id:"g26", aId:"a8", name:"Afiliados",               mgr:"" },
+  { id:"g27", aId:"a9", name:"Professores Variável",    mgr:"" },
+  { id:"g28", aId:"a10",name:"Pagar.me",                mgr:"" },
 ];
 
-const budgetSeed = [
-  { id:"b1", centerId:"receita", categoryId:"receita", line:"Assinaturas", driver:"Receita", automatic:false, values:[540000, 555000, 582000, 610000, 628000, 642000, 654000, 666000, 681000, 697000, 718000, 748000] },
-  { id:"b2", centerId:"receita", categoryId:"gateway", line:"Gateway de pagamento", driver:"% Receita", automatic:true, values:[30240, 31080, 32592, 34160, 35168, 35952, 36624, 37296, 38136, 39032, 40208, 41888] },
-  { id:"b3", centerId:"receita", categoryId:"tributos", line:"Simples Nacional", driver:"% Receita", automatic:true, values:[43200, 44400, 46560, 48800, 50240, 51360, 52320, 53280, 54480, 55760, 57440, 59840] },
-  { id:"b4", centerId:"produto", categoryId:"professores", line:"Professores recorrentes", driver:"Produção", automatic:false, values:[165000, 171000, 178000, 186000, 193000, 202000, 208000, 215000, 224000, 233000, 244000, 258000] },
-  { id:"b5", centerId:"growth", categoryId:"marketing", line:"Mídia paga", driver:"Campanha", automatic:false, values:[42000, 45000, 52000, 56000, 62000, 65000, 69000, 72000, 76000, 80000, 90000, 98000] },
-  { id:"b6", centerId:"ops", categoryId:"pessoas", line:"Folha Operações", driver:"CLT/PJ", automatic:false, values:[82000, 82000, 84000, 84000, 86000, 86000, 88000, 88000, 90000, 90000, 93000, 93000] },
-  { id:"b7", centerId:"ops", categoryId:"tecnologia", line:"Codex", driver:"Assinatura", automatic:false, values:[3200, 3200, 3200, 3200, 3600, 3600, 3600, 3600, 3800, 3800, 3800, 3800] },
+// pt: 'a' = parent é área  |  'g' = parent é grupo
+const SEED_LINES = [
+  // ── Receitas ──────────────────────────────────────────────────────────────
+  { id:"l1",   pid:"a1",  pt:"a", name:"Assinaturas",                    v:[680000,680000,392000,392000,392000,392000,392000,200000,200000,200000,200000,200000] },
+  { id:"l2",   pid:"a1",  pt:"a", name:"Cursos",                         v:[300000,300000,192000,192000,192000,192000,192000,120000,120000,120000,120000,120000] },
+  { id:"l3",   pid:"a1",  pt:"a", name:"Módulos",                        v:[20000,20000,20000,20000,20000,20000,20000,20000,20000,20000,20000,20000] },
+  // ── Revenue Ops ───────────────────────────────────────────────────────────
+  { id:"l4",   pid:"g1",  pt:"g", name:"Vinicius Souza",                 v:[28000,28000,28000,28000,28000,10000,10000,10000,10000,10000,10000,10000] },
+  { id:"l5",   pid:"g2",  pt:"g", name:"Hugo Rocha (Head Marketing)",    v:[0,0,0,7815,12875,12875,0,0,0,0,0,0] },
+  { id:"l6",   pid:"g2",  pt:"g", name:"Matheus Martins (Product Mgr)",  v:[0,0,0,7258,12500,12500,0,0,0,0,0,0] },
+  { id:"l7",   pid:"g2",  pt:"g", name:"BCJ Agência (Mídia)",            v:[0,10000,10000,10000,10000,10000,0,0,0,0,0,0] },
+  { id:"l8",   pid:"g2",  pt:"g", name:"Tamires (Designer)",             v:[0,0,0,0,5000,0,0,0,0,0,0,0] },
+  { id:"l9",   pid:"g2",  pt:"g", name:"Pivotto (Designer Freela)",      v:[0,6000,6000,6000,6000,0,0,0,0,0,0,0] },
+  { id:"l10",  pid:"g2",  pt:"g", name:"Jaqueline Schaefer (Social)",    v:[5500,5500,5500,5500,5500,3000,3000,3000,3000,3000,3000,3000] },
+  { id:"l11",  pid:"g2",  pt:"g", name:"Victor Manuel (Growth)",         v:[0,3500,3500,3500,3500,3000,3000,3000,3000,3000,3000,3000] },
+  { id:"l12",  pid:"g2",  pt:"g", name:"Eduardo Edson (Growth Jr.)",     v:[0,2000,2000,2000,2000,2000,2000,2000,2000,2000,2000,2000] },
+  { id:"l13",  pid:"g2",  pt:"g", name:"Vivian Larrat",                  v:[6956,6956,6956,6956,6956,6956,6956,6956,0,0,0,0] },
+  { id:"l14",  pid:"g2",  pt:"g", name:"Veronica Cavalcante",            v:[2782,2782,2782,2782,2782,2782,2782,2782,2782,2782,0,0] },
+  { id:"l15",  pid:"g2",  pt:"g", name:"Bruno Dantas (Head Growth)",     v:[0,0,7500,7500,0,0,0,0,0,0,0,0] },
+  { id:"l16",  pid:"g2",  pt:"g", name:"Gabriel Coppola (Head Mkt)",     v:[2419,15000,15000,15000,0,0,0,0,0,0,0,0] },
+  { id:"l17",  pid:"g2",  pt:"g", name:"Tiago Valente (Designer Jr.)",   v:[0,0,7000,0,0,0,0,0,0,0,0,0] },
+  { id:"l18",  pid:"g2",  pt:"g", name:"João",                           v:[5564,5564,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l19",  pid:"g2",  pt:"g", name:"Serenna Alves",                  v:[10500,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l20",  pid:"g2",  pt:"g", name:"Raiane",                         v:[10444,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l21",  pid:"g2",  pt:"g", name:"William Porto",                  v:[6500,6500,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l22",  pid:"g2",  pt:"g", name:"Vitor Netto",                    v:[9484,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l23",  pid:"g2",  pt:"g", name:"Luis Gustavo",                   v:[3500,1750,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l24",  pid:"g2",  pt:"g", name:"Andrew",                         v:[3000,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l25",  pid:"g3",  pt:"g", name:"Victor Gammaro",                 v:[16000,16000,16000,9500,9500,5000,5000,5000,5000,5000,5000,5000] },
+  { id:"l26",  pid:"g3",  pt:"g", name:"Barbara Macedo",                 v:[2226,2226,2226,2226,2226,2226,0,0,0,0,0,0] },
+  { id:"l27",  pid:"g3",  pt:"g", name:"Rebeca Kemilly",                 v:[4173,4173,4173,4173,4173,4173,0,0,0,0,0,0] },
+  { id:"l28",  pid:"g3",  pt:"g", name:"João Carlos Santos",             v:[1055,1055,1055,2400,1055,0,0,0,0,0,0,0] },
+  { id:"l29",  pid:"g3",  pt:"g", name:"Natalia Pires",                  v:[4173,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l30",  pid:"g3",  pt:"g", name:"Bonificação Natalia",            v:[1000,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l31",  pid:"g4",  pt:"g", name:"Beatriz Reis Froes",             v:[2161,2161,2161,2161,0,0,0,0,0,0,0,0] },
+  { id:"l32",  pid:"g4",  pt:"g", name:"Marcos Moreira Junior",          v:[4312,4312,4312,4312,0,0,0,0,0,0,0,0] },
+  { id:"l33",  pid:"g4",  pt:"g", name:"Bruna Alves Bezerra",            v:[2161,2161,2161,0,0,0,0,0,0,0,0,0] },
+  { id:"l34",  pid:"g5",  pt:"g", name:"Thiago Sampaio",                 v:[0,14000,14000,14000,14000,14000,0,0,0,0,0,0] },
+  { id:"l35",  pid:"g5",  pt:"g", name:"Diego Araujo Silva",             v:[2504,2504,2504,2504,2504,2504,0,0,0,0,0,0] },
+  { id:"l36",  pid:"g5",  pt:"g", name:"Matheus Alves Ferreira",         v:[0,0,0,3500,3500,3500,3500,3500,3500,3500,3500,3500] },
+  { id:"l37",  pid:"g5",  pt:"g", name:"Anyele Araújo Silva",            v:[0,0,2000,2000,2000,2000,2000,2000,2000,2000,2000,2000] },
+  { id:"l38",  pid:"g5",  pt:"g", name:"Ana Monteiro",                   v:[0,0,0,3500,3500,3500,0,0,0,0,0,0] },
+  { id:"l39",  pid:"g5",  pt:"g", name:"Vitor Gonçalves",                v:[2504,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l40",  pid:"g6",  pt:"g", name:"Insider",                        v:[0,30000,30000,30000,40000,28000,28000,28000,28000,28000,28000,28000] },
+  { id:"l41",  pid:"g6",  pt:"g", name:"Anthropic - Direcao OS",         v:[0,0,8000,8000,6000,0,0,0,0,0,0,0] },
+  { id:"l42",  pid:"g6",  pt:"g", name:"ADOO",                           v:[1990,1990,1990,2338,2338,0,0,0,0,0,0,0] },
+  { id:"l43",  pid:"g6",  pt:"g", name:"Pipedrive (CRM)",                v:[0,2000,2000,2000,2500,250,250,250,250,250,250,250] },
+  { id:"l44",  pid:"g6",  pt:"g", name:"Pipedrive VOIP",                 v:[0,0,0,0,700,250,250,250,250,250,250,250] },
+  { id:"l45",  pid:"g6",  pt:"g", name:"Timesline AI",                   v:[0,0,0,0,800,250,250,250,250,250,250,250] },
+  { id:"l46",  pid:"g6",  pt:"g", name:"Adobe",                          v:[450,450,450,450,0,0,0,0,0,0,0,0] },
+  { id:"l47",  pid:"g6",  pt:"g", name:"Framer",                         v:[600,600,600,600,2000,350,350,350,350,350,350,350] },
+  { id:"l48",  pid:"g6",  pt:"g", name:"Claude Max (Growth)",            v:[550,550,550,550,1100,1100,1100,1100,1100,1100,1100,1100] },
+  { id:"l49",  pid:"g6",  pt:"g", name:"Claude Max (Growth2)",           v:[0,0,0,1100,0,0,0,0,0,0,0,0] },
+  { id:"l50",  pid:"g6",  pt:"g", name:"MLabs",                          v:[0,300,300,300,300,300,300,300,300,300,300,300] },
+  { id:"l51",  pid:"g6",  pt:"g", name:"Higsfield.AI",                   v:[0,0,300,300,500,500,500,500,500,500,500,500] },
+  { id:"l52",  pid:"g6",  pt:"g", name:"Figma",                          v:[0,300,300,300,700,280,280,280,280,280,280,280] },
+  { id:"l53",  pid:"g6",  pt:"g", name:"VMix",                           v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l54",  pid:"g6",  pt:"g", name:"Canva",                          v:[135,135,135,135,135,0,0,0,0,0,0,0] },
+  { id:"l55",  pid:"g6",  pt:"g", name:"Capcut",                         v:[0,100,100,100,100,0,0,0,0,0,0,0] },
+  { id:"l56",  pid:"g6",  pt:"g", name:"Envato",                         v:[0,100,100,100,100,0,0,0,0,0,0,0] },
+  { id:"l57",  pid:"g6",  pt:"g", name:"Sendflow",                       v:[0,0,277,277,277,277,277,277,0,0,0,0] },
+  { id:"l58",  pid:"g6",  pt:"g", name:"N8N",                            v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l59",  pid:"g6",  pt:"g", name:"Freepik",                        v:[200,200,0,0,500,0,0,0,0,0,0,0] },
+  { id:"l60",  pid:"g6",  pt:"g", name:"Gamma App",                      v:[0,0,0,0,300,200,200,200,200,200,200,200] },
+  { id:"l61",  pid:"g6",  pt:"g", name:"Bee Free",                       v:[0,0,0,0,150,150,150,150,150,150,150,150] },
+  { id:"l62",  pid:"g6",  pt:"g", name:"Claude AI (Blog)",               v:[120,200,200,200,0,0,0,0,0,0,0,0] },
+  { id:"l63",  pid:"g6",  pt:"g", name:"Claude AI (Copy)",               v:[120,200,200,200,0,0,0,0,0,0,0,0] },
+  { id:"l64",  pid:"g6",  pt:"g", name:"Chat GPT (Mariana)",             v:[340,340,340,340,340,340,340,340,340,340,340,340] },
+  { id:"l65",  pid:"g6",  pt:"g", name:"Manychat",                       v:[8000,8000,8000,0,0,0,0,0,0,0,0,0] },
+  { id:"l66",  pid:"g6",  pt:"g", name:"Webflow",                        v:[1300,1300,1300,1300,1300,0,0,0,0,0,0,0] },
+  { id:"l67",  pid:"g7",  pt:"g", name:"Google Bruto",                   v:[22600,22600,22600,22600,22600,22600,0,0,0,0,0,0] },
+  { id:"l68",  pid:"g7",  pt:"g", name:"Google Imposto",                 v:[2938,2938,2938,2938,2938,2938,0,0,0,0,0,0] },
+  { id:"l69",  pid:"g7",  pt:"g", name:"Facebook",                       v:[20000,20000,20000,20000,20000,20000,0,0,0,0,0,0] },
+  { id:"l70",  pid:"g7",  pt:"g", name:"Facebook Imposto",               v:[2600,2600,2600,2600,2600,2600,0,0,0,0,0,0] },
+  { id:"l71",  pid:"g7",  pt:"g", name:"Outras",                         v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l72",  pid:"g8",  pt:"g", name:"Aulas e Eventos",                v:[24000,24000,24000,24000,24000,0,0,0,0,0,0,0] },
+  { id:"l73",  pid:"g8",  pt:"g", name:"Consultorias",                   v:[5000,5000,5000,5000,5000,0,0,0,0,0,0,0] },
+  // ── Acadêmico ─────────────────────────────────────────────────────────────
+  { id:"l74",  pid:"g9",  pt:"g", name:"Helder da Costa Silva",          v:[3798,3798,3798,3798,3798,3798,0,0,0,0,0,0] },
+  { id:"l75",  pid:"g9",  pt:"g", name:"Daniel Mota Polatto",            v:[0,0,2100,2100,2100,2100,0,0,0,0,0,0] },
+  { id:"l76",  pid:"g9",  pt:"g", name:"Lucas Araujo de Oliveira",       v:[3339,3339,3339,3339,3339,3339,0,0,0,0,0,0] },
+  { id:"l77",  pid:"g9",  pt:"g", name:"Mateus de Barcelos Silva",       v:[8956,8956,8956,8956,8956,8956,3000,3000,3000,3000,3000,3000] },
+  { id:"l78",  pid:"g9",  pt:"g", name:"Matheus Cardoso dos Santos",     v:[3060,3060,3060,3060,3060,3060,0,0,0,0,0,0] },
+  { id:"l79",  pid:"g9",  pt:"g", name:"Nayara Lauane de Araujo",        v:[3060,3060,3060,3060,3060,3060,0,0,0,0,0,0] },
+  { id:"l80",  pid:"g9",  pt:"g", name:"Serenna Tharyne Alves",          v:[0,10500,10500,10500,10500,10500,0,0,0,0,0,0] },
+  { id:"l81",  pid:"g9",  pt:"g", name:"Jessica Nere",                   v:[2679,2679,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l82",  pid:"g9",  pt:"g", name:"Livia Maria Santos",             v:[3339,3339,3339,0,0,0,0,0,0,0,0,0] },
+  { id:"l83",  pid:"g10", pt:"g", name:"Produção de Conteúdo",           v:[10000,10000,10000,10000,10000,5000,5000,5000,5000,5000,5000,5000] },
+  { id:"l84",  pid:"g10", pt:"g", name:"Aulas Exclusivas",               v:[2000,2000,2000,2000,2000,500,500,500,500,500,500,500] },
+  { id:"l85",  pid:"g10", pt:"g", name:"Fórum de Dúvidas",               v:[1000,1000,1000,1000,300,300,300,300,300,300,300,300] },
+  { id:"l86",  pid:"g10", pt:"g", name:"Jose Maria (Fixo)",              v:[10000,10000,10000,10000,10000,0,0,0,0,0,0,0] },
+  { id:"l87",  pid:"g10", pt:"g", name:"Marcel Guimarães (Fixo)",        v:[11000,11000,11000,11000,11000,0,0,0,0,0,0,0] },
+  { id:"l88",  pid:"g10", pt:"g", name:"Nathalia Masson (Fixo)",         v:[20000,20000,20000,20000,20000,0,0,0,0,0,0,0] },
+  { id:"l89",  pid:"g11", pt:"g", name:"Claude AI (Acadêmico)",          v:[150,150,150,150,150,0,0,0,0,0,0,0] },
+  { id:"l90",  pid:"g11", pt:"g", name:"Tutory",                         v:[5000,5000,5000,5000,5000,3500,3500,3500,3500,3500,3500,3500] },
+  { id:"l91",  pid:"g12", pt:"g", name:"Turma dos Feras (TCU)",          v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  // ── Tecnologia ────────────────────────────────────────────────────────────
+  { id:"l92",  pid:"g13", pt:"g", name:"Raphael Fuzaitte",               v:[30000,30000,30000,30000,30000,30000,10000,10000,10000,10000,10000,10000] },
+  { id:"l93",  pid:"g14", pt:"g", name:"William Sutero",                 v:[5000,5000,5000,5000,5000,5000,0,0,0,0,0,0] },
+  { id:"l94",  pid:"g15", pt:"g", name:"Amazon",                         v:[55000,55000,55000,55000,55000,30000,30000,30000,30000,30000,30000,30000] },
+  { id:"l95",  pid:"g15", pt:"g", name:"Lovable",                        v:[300,300,300,300,300,0,0,0,0,0,0,0] },
+  { id:"l96",  pid:"g15", pt:"g", name:"MongoDB",                        v:[5500,5500,5500,5500,5500,4000,4000,4000,4000,4000,4000,4000] },
+  { id:"l97",  pid:"g15", pt:"g", name:"Hevo Data",                      v:[1800,1800,1800,1800,1800,1800,1800,1800,1800,1800,1800,1800] },
+  { id:"l98",  pid:"g15", pt:"g", name:"Bitbucket",                      v:[120,120,120,120,120,0,0,0,0,0,0,0] },
+  { id:"l99",  pid:"g15", pt:"g", name:"GitHub",                         v:[80,80,80,80,80,0,0,0,0,0,0,0] },
+  { id:"l100", pid:"g15", pt:"g", name:"NPM",                            v:[50,50,50,50,50,0,0,0,0,0,0,0] },
+  { id:"l101", pid:"g15", pt:"g", name:"Claude",                         v:[0,0,0,550,550,0,0,0,0,0,0,0] },
+  { id:"l102", pid:"g15", pt:"g", name:"Open.AI",                        v:[300,300,300,300,300,0,0,0,0,0,0,0] },
+  // ── Operações & Financeiro ────────────────────────────────────────────────
+  { id:"l103", pid:"g16", pt:"g", name:"Anderson Almeida de Santana",    v:[8500,8500,8500,8500,8500,8500,7700,7700,7700,7700,7700,7700] },
+  { id:"l104", pid:"g16", pt:"g", name:"Luiz Henrique Lima Morais",      v:[3478,3478,3478,3478,3478,0,0,0,0,0,0,0] },
+  { id:"l105", pid:"g16", pt:"g", name:"Samuel - Controller",            v:[0,0,8800,8800,8800,0,0,0,0,0,0,0] },
+  { id:"l106", pid:"g16", pt:"g", name:"Jessica Caetano",                v:[2161,2161,2161,2161,2161,0,0,0,0,0,0,0] },
+  { id:"l107", pid:"g17", pt:"g", name:"Thiago Moura",                   v:[9056,9056,9056,9056,9056,9056,5000,5000,5000,5000,5000,5000] },
+  { id:"l108", pid:"g17", pt:"g", name:"Operadores Freelancer",          v:[1000,1000,1000,0,0,0,0,0,0,0,0,0] },
+  { id:"l109", pid:"g18", pt:"g", name:"Vale Alimentação (Caju)",        v:[16169,16169,11685,11685,11685,1400,1400,1400,1400,1400,1400,1400] },
+  { id:"l110", pid:"g18", pt:"g", name:"Plano de Saúde",                 v:[2500,2500,2500,2500,2500,0,0,0,0,0,0,0] },
+  { id:"l111", pid:"g18", pt:"g", name:"Auxílio Home Office",            v:[3065,2660,2660,1485,1485,0,0,0,0,0,0,0] },
+  { id:"l112", pid:"g18", pt:"g", name:"Total Pass",                     v:[2841,2841,2841,2841,2841,2841,0,0,0,0,0,0] },
+  { id:"l113", pid:"g19", pt:"g", name:"ClickUp (30 licenças)",          v:[0,3000,3000,3000,3000,0,0,0,0,0,0,0] },
+  { id:"l114", pid:"g19", pt:"g", name:"Bitwarden",                      v:[0,0,0,0,600,0,0,0,0,0,0,0] },
+  { id:"l115", pid:"g19", pt:"g", name:"Claude Times",                   v:[220,220,220,220,2750,0,0,0,0,0,0,0] },
+  { id:"l116", pid:"g19", pt:"g", name:"Claude Max Team",                v:[0,0,0,0,3180,0,0,0,0,0,0,0] },
+  { id:"l117", pid:"g19", pt:"g", name:"Granatum",                       v:[269,269,269,269,299,299,299,299,299,299,299,299] },
+  { id:"l118", pid:"g19", pt:"g", name:"Nota Gateway",                   v:[420,420,420,420,420,420,420,420,420,420,420,420] },
+  { id:"l119", pid:"g19", pt:"g", name:"Pluga",                          v:[359,359,359,359,359,0,0,0,0,0,0,0] },
+  { id:"l120", pid:"g19", pt:"g", name:"Google Workspace",               v:[2895,2895,2895,2895,2895,2895,2895,800,800,800,800,800] },
+  { id:"l121", pid:"g19", pt:"g", name:"Notion",                         v:[2000,2000,2000,2000,2000,0,0,0,0,0,0,0] },
+  { id:"l122", pid:"g19", pt:"g", name:"Slack",                          v:[1400,1400,1400,1400,1400,1400,0,0,0,0,0,0] },
+  { id:"l123", pid:"g19", pt:"g", name:"Pipefy",                         v:[800,800,800,800,800,0,0,0,0,0,0,0] },
+  { id:"l124", pid:"g19", pt:"g", name:"Zapsign",                        v:[40,40,40,40,40,40,40,40,40,40,40,40] },
+  { id:"l125", pid:"g19", pt:"g", name:"Oitchau",                        v:[132,132,132,132,132,132,0,0,0,0,0,0] },
+  // ── Infraestrutura ────────────────────────────────────────────────────────
+  { id:"l126", pid:"g20", pt:"g", name:"Aluguel",                        v:[9300,9700,9600,9600,5800,0,0,0,0,0,0,0] },
+  { id:"l127", pid:"g20", pt:"g", name:"Telefone",                       v:[942,942,942,942,942,942,0,0,0,0,0,0] },
+  { id:"l128", pid:"g20", pt:"g", name:"Material Uso e Consumo",         v:[500,500,500,500,500,500,0,0,0,0,0,0] },
+  { id:"l129", pid:"g21", pt:"g", name:"Polla Contadores",               v:[5500,5500,5500,5500,5500,3500,3500,3500,3500,3500,3500,3500] },
+  { id:"l130", pid:"g21", pt:"g", name:"Estrela Neto Advogados",         v:[5000,6626,6626,6626,6626,7016,7016,7016,7016,7016,7016,7016] },
+  { id:"l131", pid:"g21", pt:"g", name:"LLRR Advogados",                 v:[6000,6000,6000,6000,6000,6000,6000,6000,6000,6000,6000,6000] },
+  { id:"l132", pid:"g22", pt:"g", name:"Confraternizações e Eventos",    v:[1250,1250,1250,1250,0,0,0,0,0,0,0,0] },
+  { id:"l133", pid:"g22", pt:"g", name:"Hospedagens e Viagens",          v:[20000,20000,20000,20000,0,0,0,0,0,0,0,0] },
+  { id:"l134", pid:"g22", pt:"g", name:"Manutenções e Reparos",          v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l135", pid:"g22", pt:"g", name:"Outras Despesas",                v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  // ── FINEX ─────────────────────────────────────────────────────────────────
+  { id:"l136", pid:"g23", pt:"g", name:"Banco Bradesco",                 v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l137", pid:"g23", pt:"g", name:"Banco Itaú",                     v:[19378,19378,19378,0,0,0,0,0,0,0,0,0] },
+  { id:"l138", pid:"g23", pt:"g", name:"Banco Sofisa",                   v:[80105,80105,80105,80105,80105,80105,80105,80105,80105,80105,80105,80105] },
+  { id:"l139", pid:"g23", pt:"g", name:"Banco Daycoval",                 v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l140", pid:"g23", pt:"g", name:"Tarifas Bancárias",              v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l141", pid:"g23", pt:"g", name:"Renegociações",                  v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l142", pid:"g23", pt:"g", name:"Juros e Multas",                 v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  // ── Revenue Ops Variável ──────────────────────────────────────────────────
+  { id:"l143", pid:"g24", pt:"g", name:"Marcos Moreira - Variável",      v:[5466,11678,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l144", pid:"g24", pt:"g", name:"Beatriz Reis - Variável",        v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l145", pid:"g24", pt:"g", name:"Bruna Bezerra - Variável",       v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l146", pid:"g25", pt:"g", name:"Diego Araujo - Variável",        v:[5504,1430,302,1054,938,0,0,0,0,0,0,0] },
+  { id:"l147", pid:"g25", pt:"g", name:"Anyele Araújo",                  v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l148", pid:"g25", pt:"g", name:"Matheus Ferreira",               v:[0,0,0,0,0,0,0,0,0,0,0,0] },
+  { id:"l149", pid:"g26", pt:"g", name:"Anyele - Bônus",                 v:[800,800,800,800,800,0,0,0,0,0,0,0] },
+  { id:"l150", pid:"g26", pt:"g", name:"Fabiana - Bônus",                v:[800,800,800,800,800,0,0,0,0,0,0,0] },
+  { id:"l151", pid:"g26", pt:"g", name:"Lais - Bônus",                   v:[800,800,800,800,800,0,0,0,0,0,0,0] },
+  { id:"l152", pid:"g26", pt:"g", name:"Anyele - Variável",              v:[4652,2084,3009,2497,2814,0,0,0,0,0,0,0] },
+  { id:"l153", pid:"g26", pt:"g", name:"Fabiana - Variável",             v:[5485,2057,2700,2083,4171,0,0,0,0,0,0,0] },
+  { id:"l154", pid:"g26", pt:"g", name:"Lais - Variável",                v:[6254,2469,1891,2614,3187,0,0,0,0,0,0,0] },
+  // ── Acadêmico Variável ────────────────────────────────────────────────────
+  { id:"l155", pid:"g27", pt:"g", name:"Elaboração de Recursos",         v:[6000,6000,6000,6000,6000,0,0,0,0,0,0,0] },
+  { id:"l156", pid:"g27", pt:"g", name:"Correção Discursivas",           v:[500,500,500,500,500,0,0,0,0,0,0,0] },
+  { id:"l157", pid:"g27", pt:"g", name:"Programa Passe",                 v:[20000,20000,20000,20000,20000,4000,4000,4000,4000,4000,4000,4000] },
+  { id:"l158", pid:"g27", pt:"g", name:"Mentores",                       v:[41000,41000,41000,41000,41000,4000,4000,4000,4000,4000,4000,4000] },
+  { id:"l159", pid:"g27", pt:"g", name:"Royalties - Cursos",             v:[16000,16000,16000,16000,16000,3000,3000,3000,3000,3000,3000,3000] },
+  { id:"l160", pid:"g27", pt:"g", name:"Royalties - Assinaturas",        v:[24000,24000,24000,24000,24000,3200,3200,3200,3200,3200,3200,3200] },
+  // ── FINEX Variável ────────────────────────────────────────────────────────
+  { id:"l161", pid:"g28", pt:"g", name:"Taxa de Antecipação",            v:[100000,100000,100000,100000,34000,34000,34000,34000,34000,34000,34000,34000] },
+  { id:"l162", pid:"g28", pt:"g", name:"Taxa de Operação",               v:[25000,25000,25000,25000,8500,8500,8500,8500,8500,8500,8500,8500] },
+  // ── Devoluções ────────────────────────────────────────────────────────────
+  { id:"l163", pid:"a11", pt:"a", name:"Cancelamentos",                  v:[100000,100000,100000,100000,34000,34000,34000,34000,34000,34000,34000,34000] },
+  // ── Tributos ──────────────────────────────────────────────────────────────
+  { id:"l164", pid:"a12", pt:"a", name:"IRPJ",                           v:[4271,0,0,1258,0,0,951,1265,2350,2350,2767,2767] },
+  { id:"l165", pid:"a12", pt:"a", name:"CSLL",                           v:[2258,0,0,755,0,0,571,759,1410,1410,1660,1660] },
 ];
 
-const entriesSeed = [
-  { id:"e1", type:"gain", status:"recebido", date:"2026-05-10", dueDate:"2026-05-10", competence:"2026-05", account:"Itaú Principal", contact:"Assinaturas B2C", categoryId:"receita", centerId:"receita", amount:628000, payment:"Cartão", document:"NF 9001", origin:"Manual", recurrence:"Único", installments:"1/1", tags:["receita", "cartão"], attachments:1, reviewed:true, reconciled:true, notes:"Receita consolidada do gateway.", allocation:[{ categoryId:"receita", centerId:"receita", percent:100, amount:628000 }] },
-  { id:"e2", type:"expense", status:"a_pagar", date:"2026-05-18", dueDate:"2026-05-18", competence:"2026-05", account:"Cartão Corporativo", contact:"OpenAI", categoryId:"tecnologia", centerId:"ops", amount:-3600, payment:"Cartão", document:"INV-0526", origin:"Manual", recurrence:"Mensal", installments:"1/12", tags:["software"], attachments:1, reviewed:false, reconciled:false, notes:"Assinatura operacional.", allocation:[{ categoryId:"tecnologia", centerId:"ops", percent:100, amount:3600 }] },
-  { id:"e3", type:"expense", status:"aprovar", date:"2026-05-22", dueDate:"2026-05-22", competence:"2026-05", account:"Itaú Principal", contact:"BCJ Agência", categoryId:"marketing", centerId:"growth", amount:-56000, payment:"Boleto", document:"BOL-171", origin:"Importado", recurrence:"Único", installments:"1/1", tags:["campanha"], attachments:2, reviewed:false, reconciled:false, notes:"Campanha de aquisição.", allocation:[{ categoryId:"marketing", centerId:"growth", percent:80, amount:44800 }, { categoryId:"marketing", centerId:"receita", percent:20, amount:11200 }] },
-  { id:"e4", type:"expense", status:"pago", date:"2026-05-30", dueDate:"2026-05-30", competence:"2026-05", account:"Itaú Principal", contact:"Professores", categoryId:"professores", centerId:"produto", amount:-193000, payment:"PIX", document:"REC-77", origin:"Recorrente", recurrence:"Mensal", installments:"5/12", tags:["produção"], attachments:3, reviewed:true, reconciled:true, notes:"Folha de professores.", allocation:[{ categoryId:"professores", centerId:"produto", percent:100, amount:193000 }] },
-  { id:"e5", type:"transfer", status:"transferido", date:"2026-05-31", dueDate:"2026-05-31", competence:"2026-05", account:"Itaú Principal -> C6 Reserva", contact:"Entre contas", categoryId:"financeiro", centerId:"ops", amount:75000, payment:"TED", document:"TRF-21", origin:"Manual", recurrence:"Único", installments:"1/1", tags:["reserva"], attachments:0, reviewed:true, reconciled:true, notes:"Reforço de reserva.", allocation:[{ categoryId:"financeiro", centerId:"ops", percent:100, amount:75000 }] },
-];
-
-const contactsSeed = {
-  clientes:["Assinaturas B2C", "Projeto consultivo", "Cursos avulsos", "B2B Educação"],
-  fornecedores:["OpenAI", "BCJ Agência", "Professores", "AWS", "Contabilidade 2AS"],
+const SEED_ACTUALS = {
+  l1:[505390,135889,232384,128666,67431,0,0,0,0,0,0,0], l2:[236335,123888,151724,89765,26325,0,0,0,0,0,0,0],
+  l3:[18724,10502,11305,8224,2592,0,0,0,0,0,0,0],
+  l4:[28000,28000,28000,28000,0,0,0,0,0,0,0,0],
+  l5:[0,0,0,7815,0,0,0,0,0,0,0,0], l6:[0,0,0,7258,0,0,0,0,0,0,0,0],
+  l7:[0,10000,10000,10000,0,0,0,0,0,0,0,0], l8:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l9:[0,1286,6000,6000,0,0,0,0,0,0,0,0], l10:[0,1786,5000,5000,0,0,0,0,0,0,0,0],
+  l11:[1355,3500,3500,3500,0,0,0,0,0,0,0,0], l12:[0,429,2000,2000,0,0,0,0,0,0,0,0],
+  l13:[6956,6956,6956,6956,0,0,0,0,0,0,0,0], l14:[2049,0,0,0,0,0,0,0,0,0,0,0],
+  l15:[0,0,7500,0,0,0,0,0,0,0,0,0], l16:[2419,15000,15000,15000,0,0,0,0,0,0,0,0],
+  l17:[0,1286,6000,0,0,0,0,0,0,0,0,0], l18:[5564,5564,5564,5564,0,0,0,0,0,0,0,0],
+  l19:[0,10500,10500,10500,0,0,0,0,0,0,0,0], l20:[10444,0,0,0,0,0,0,0,0,0,0,0],
+  l21:[6500,1161,0,0,0,0,0,0,0,0,0,0], l22:[9484,0,0,0,0,0,0,0,0,0,0,0],
+  l23:[3500,1750,0,0,0,0,0,0,0,0,0,0], l24:[3000,0,0,0,0,0,0,0,0,0,0,0],
+  l25:[16000,16000,16000,16000,0,0,0,0,0,0,0,0], l26:[2226,2226,2226,2226,0,0,0,0,0,0,0,0],
+  l27:[4173,4173,4173,4173,0,0,0,0,0,0,0,0], l28:[1033,1055,1055,1033,0,0,0,0,0,0,0,0],
+  l29:[4173,0,0,0,0,0,0,0,0,0,0,0], l30:[600,0,0,0,0,0,0,0,0,0,0,0],
+  l31:[2161,2161,2161,2161,0,0,0,0,0,0,0,0], l32:[4312,4312,4312,8368,0,0,0,0,0,0,0,0],
+  l33:[2161,2161,1898,0,0,0,0,0,0,0,0,0], l34:[0,14000,14000,14000,0,0,0,0,0,0,0,0],
+  l35:[2504,2504,2504,2504,0,0,0,0,0,0,0,0], l36:[0,0,0,2597,0,0,0,0,0,0,0,0],
+  l37:[0,0,1032,2000,0,0,0,0,0,0,0,0], l38:[0,0,0,2032,0,0,0,0,0,0,0,0],
+  l39:[4048,0,0,0,0,0,0,0,0,0,0,0],
+  l40:[0,26871,26871,26871,0,0,0,0,0,0,0,0], l41:[5,27,9926,2953,0,0,0,0,0,0,0,0],
+  l42:[1990,1990,1990,1990,0,0,0,0,0,0,0,0], l43:[0,0,2404,0,0,0,0,0,0,0,0,0],
+  l44:[0,0,0,0,0,0,0,0,0,0,0,0], l45:[0,0,0,556,0,0,0,0,0,0,0,0],
+  l46:[779,779,779,0,0,0,0,0,0,0,0,0], l47:[217,933,3069,0,0,0,0,0,0,0,0,0],
+  l48:[796,1659,1250,788,0,0,0,0,0,0,0,0], l49:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l50:[0,0,50,50,0,0,0,0,0,0,0,0], l51:[0,273,276,0,0,0,0,0,0,0,0,0],
+  l52:[0,215,1475,0,0,0,0,0,0,0,0,0], l53:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l54:[135,135,189,189,0,0,0,0,0,0,0,0], l55:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l56:[0,0,179,0,0,0,0,0,0,0,0,0], l57:[0,0,507,0,0,0,0,0,0,0,0,0],
+  l58:[0,0,0,0,0,0,0,0,0,0,0,0], l59:[186,187,185,0,0,0,0,0,0,0,0,0],
+  l60:[0,0,104,0,0,0,0,0,0,0,0,0], l61:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l62:[114,114,114,0,0,0,0,0,0,0,0,0], l63:[114,110,110,0,0,0,0,0,0,0,0,0],
+  l64:[386,386,320,0,0,0,0,0,0,0,0,0], l65:[4865,2185,1251,0,0,0,0,0,0,0,0,0],
+  l66:[1847,1154,636,1143,0,0,0,0,0,0,0,0],
+  l67:[6290,5739,37549,0,0,0,0,0,0,0,0,0], l68:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l69:[64096,2599,16675,0,0,0,0,0,0,0,0,0], l70:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l71:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l72:[12885,4320,1876,0,0,0,0,0,0,0,0,0], l73:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l74:[3798,3798,3798,3798,0,0,0,0,0,0,0,0], l75:[0,0,2100,2100,0,0,0,0,0,0,0,0],
+  l76:[3339,3339,3339,3339,0,0,0,0,0,0,0,0], l77:[8956,8956,8956,8956,0,0,0,0,0,0,0,0],
+  l78:[3060,3060,3060,3060,0,0,0,0,0,0,0,0], l79:[3060,3060,3060,3060,0,0,0,0,0,0,0,0],
+  l80:[0,10500,10500,10500,0,0,0,0,0,0,0,0], l81:[2679,1519,0,0,0,0,0,0,0,0,0,0],
+  l82:[3339,4139,0,0,0,0,0,0,0,0,0,0],
+  l83:[9458,10532,2930,3687,117,0,0,0,0,0,0,0], l84:[1719,1850,2810,0,0,0,0,0,0,0,0,0],
+  l85:[188,148,80,0,0,0,0,0,0,0,0,0], l86:[10000,10000,10000,10000,0,0,0,0,0,0,0,0],
+  l87:[11000,11000,11000,11000,0,0,0,0,0,0,0,0], l88:[20000,20000,20000,20000,0,0,0,0,0,0,0,0],
+  l89:[0,0,0,0,0,0,0,0,0,0,0,0], l90:[4099,3556,2639,0,0,0,0,0,0,0,0,0],
+  l91:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l92:[30000,30000,30000,30000,0,0,0,0,0,0,0,0], l93:[5000,5000,5000,5000,0,0,0,0,0,0,0,0],
+  l94:[38810,38785,36757,40253,0,0,0,0,0,0,0,0], l95:[139,134,134,0,0,0,0,0,0,0,0,0],
+  l96:[5018,3935,4410,4890,0,0,0,0,0,0,0,0], l97:[1633,1599,1615,1644,0,0,0,0,0,0,0,0],
+  l98:[103,99,98,98,0,0,0,0,0,0,0,0], l99:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l100:[39,38,38,38,0,0,0,0,0,0,0,0], l101:[0,0,0,550,0,0,0,0,0,0,0,0],
+  l102:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l103:[8500,8500,8500,8500,0,0,0,0,0,0,0,0], l104:[3478,3478,3478,0,0,0,0,0,0,0,0,0],
+  l105:[0,0,8800,8800,0,0,0,0,0,0,0,0], l106:[2161,2255,2255,0,0,0,0,0,0,0,0,0],
+  l107:[9056,9056,9056,9056,0,0,0,0,0,0,0,0], l108:[600,400,0,0,0,0,0,0,0,0,0,0],
+  l109:[16169,11685,11119,9321,0,0,0,0,0,0,0,0], l110:[2495,2495,2495,2495,0,0,0,0,0,0,0,0],
+  l111:[3065,2660,1485,1485,0,0,0,0,0,0,0,0], l112:[2994,2994,2841,2841,0,0,0,0,0,0,0,0],
+  l113:[520,923,1509,0,0,0,0,0,0,0,0,0], l114:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l115:[0,0,0,0,0,0,0,0,0,0,0,0], l116:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l117:[269,269,269,299,0,0,0,0,0,0,0,0], l118:[420,420,420,420,0,0,0,0,0,0,0,0],
+  l119:[359,359,359,359,0,0,0,0,0,0,0,0], l120:[2880,2880,2895,0,0,0,0,0,0,0,0,0],
+  l121:[1737,1486,1377,0,0,0,0,0,0,0,0,0], l122:[1171,1045,965,1026,0,0,0,0,0,0,0,0],
+  l123:[717,756,712,0,0,0,0,0,0,0,0,0], l124:[40,40,40,0,0,0,0,0,0,0,0,0],
+  l125:[132,132,132,0,0,0,0,0,0,0,0,0],
+  l126:[10434,10266,10080,9000,0,0,0,0,0,0,0,0], l127:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l128:[390,150,300,0,0,0,0,0,0,0,0,0], l129:[5622,5193,5193,5193,0,0,0,0,0,0,0,0],
+  l130:[5000,5000,5000,5000,0,0,0,0,0,0,0,0], l131:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l132:[0,0,0,0,0,0,0,0,0,0,0,0], l133:[0,7397,0,0,0,0,0,0,0,0,0,0],
+  l134:[0,0,0,0,0,0,0,0,0,0,0,0], l135:[400,2045,7234,5940,0,0,0,0,0,0,0,0],
+  l136:[0,0,0,0,0,0,0,0,0,0,0,0], l137:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l138:[0,0,0,0,0,0,0,0,0,0,0,0], l139:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l140:[250,550,0,300,0,0,0,0,0,0,0,0], l141:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l142:[6003,7005,2446,0,0,0,0,0,0,0,0,0],
+  l143:[5466,1109,667,0,0,0,0,0,0,0,0,0], l144:[30,0,0,0,0,0,0,0,0,0,0,0],
+  l145:[70,0,0,0,0,0,0,0,0,0,0,0], l146:[6392,1952,479,0,0,0,0,0,0,0,0,0],
+  l147:[0,0,0,0,0,0,0,0,0,0,0,0], l148:[0,0,0,0,0,0,0,0,0,0,0,0],
+  l149:[800,800,0,0,0,0,0,0,0,0,0,0], l150:[800,0,0,0,0,0,0,0,0,0,0,0],
+  l151:[800,0,0,0,0,0,0,0,0,0,0,0], l152:[1036,492,3232,0,0,0,0,0,0,0,0,0],
+  l153:[754,116,2259,0,0,0,0,0,0,0,0,0], l154:[608,223,0,0,0,0,0,0,0,0,0,0],
+  l155:[0,0,200,0,0,0,0,0,0,0,0,0], l156:[0,1671,0,0,0,0,0,0,0,0,0,0],
+  l157:[15147,13462,14631,11764,10453,9794,4769,3794,3179,2262,1386,1139],
+  l158:[34944,29331,22906,17697,12497,10431,8742,5242,4200,2600,1675,1075],
+  l159:[6328,5266,4510,0,0,0,0,0,0,0,0,0], l160:[15333,12608,12150,0,0,0,0,0,0,0,0,0],
+  l161:[56585,19181,30711,19814,0,0,0,0,0,0,0,0], l162:[16206,10319,10812,5622,0,0,0,0,0,0,0,0],
+  l163:[95680,19584,38537,11982,419,0,0,0,0,0,0,0],
+  l164:[4326,0,0,0,0,0,0,0,0,0,0,0], l165:[2277,0,0,0,0,0,0,0,0,0,0,0],
 };
 
-const statusLabel = {
-  recebido:"Recebido",
-  a_receber:"A receber",
-  pago:"Pago",
-  a_pagar:"A pagar",
-  aprovar:"Aprovar",
-  transferido:"Transferido",
-};
-
-function lineTotal(line) {
-  return line.values.reduce((acc, value) => acc + value, 0);
-}
-
-function categoryOf(categories, id) {
-  return categories.find(category => category.id === id);
-}
-
-function centerOf(centers, id) {
-  return centers.find(center => center.id === id);
-}
-
-function IconButton({ icon, children, active = false, onClick, tone = "" }) {
-  const ButtonIcon = icon;
-  return <button className={`${active ? "btn primary" : "btn"} ${tone}`} onClick={onClick} type="button"><ButtonIcon size={15} /> {children}</button>;
-}
-
-function TopMenu({ page, setPage }) {
-  const items = [
-    ["overview", "VISÃO GERAL"],
-    ["entries", "LANÇAMENTOS"],
-    ["reports", "RELATÓRIOS"],
-    ["budget", "ORÇAMENTO"],
-    ["clients", "CLIENTES"],
-    ["suppliers", "FORNECEDORES"],
-  ];
-  return (
-    <nav className="top-menu">
-      {items.map(([id, label]) => (
-        <button key={id} className={page === id ? "active" : ""} onClick={() => setPage(id)} type="button">{label}</button>
-      ))}
-    </nav>
-  );
-}
-
-function Header({ company, companies, setCompany, page, setPage, setModal, sessionEmail, onSignOut }) {
+// ─── Header ───────────────────────────────────────────────────────────────────
+function Header({ version, versions, setVersion, view, setView, sessionEmail, onSignOut }) {
   return (
     <header className="app-header">
       <div className="header-main">
-        <button className="brand-mark" onClick={() => setPage("admin")} type="button">
-          <span>2</span>AS
-          <small>INTELIGÊNCIA FINANCEIRA</small>
-        </button>
-        <TopMenu page={page} setPage={setPage} />
-        <div className="header-actions">
-          {typeof onSignOut === "function" && sessionEmail ? (
-            <>
-              <span className="header-user-email">{sessionEmail}</span>
-              <button className="link-btn" onClick={() => void onSignOut()} type="button">SAIR</button>
-            </>
-          ) : null}
-          <select value={company.id} onChange={event => setCompany(companies.find(item => item.id === event.target.value))}>
-            {companies.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <button className="link-btn" onClick={() => setPage("settings")} type="button">CONFIGURAÇÕES</button>
-          <button className="link-btn" type="button">AJUDA</button>
+        <div className="brand-mark">
+          <span>2</span>AS<small>ORÇAMENTO</small>
         </div>
-      </div>
-      <div className="quickbar">
-        <IconButton icon={FileOutput} tone="danger" onClick={() => setModal("expense")}>REGISTRAR GASTO</IconButton>
-        <IconButton icon={FileInput} tone="success" onClick={() => setModal("gain")}>REGISTRAR GANHO</IconButton>
-        <IconButton icon={ArrowLeftRight} tone="info" onClick={() => setModal("transfer")}>REGISTRAR TRANSFERÊNCIA</IconButton>
-        <IconButton icon={Database}>IMPORTAR REGISTROS</IconButton>
-        <IconButton icon={CheckCircle2}>CONCILIAÇÃO</IconButton>
+        <nav className="top-menu">
+          {[["budget","ORÇAMENTO"],["realized","REALIZADO"],["comparison","ORÇADO × REALIZADO"],["summary","RESUMO POR ÁREA"]].map(([id,label]) => (
+            <button key={id} className={view===id?"active":""} onClick={()=>setView(id)} type="button">{label}</button>
+          ))}
+        </nav>
+        <div className="header-actions">
+          <select value={version.id} onChange={e=>setVersion(versions.find(v=>v.id===e.target.value))}>
+            {versions.map(v=><option key={v.id} value={v.id}>{v.year} · {v.name}{v.status==="draft"?" (rascunho)":""}</option>)}
+          </select>
+          {sessionEmail && <><span className="header-user-email">{sessionEmail}</span><button className="link-btn" onClick={onSignOut} type="button">SAIR</button></>}
+        </div>
       </div>
     </header>
   );
 }
 
-function Dashboard({ accounts, entries, budget, categories, centers }) {
-  const receivable = entries.filter(entry => entry.amount > 0 && entry.status !== "recebido").reduce((acc, entry) => acc + entry.amount, 0);
-  const payable = Math.abs(entries.filter(entry => entry.amount < 0 && entry.status !== "pago").reduce((acc, entry) => acc + entry.amount, 0));
-  const balance = accounts.reduce((acc, account) => acc + account.balance, 0);
-  const revenueMay = entries.filter(entry => entry.amount > 0 && entry.competence === "2026-05").reduce((acc, entry) => acc + entry.amount, 0);
-  const expenseMay = Math.abs(entries.filter(entry => entry.amount < 0 && entry.competence === "2026-05").reduce((acc, entry) => acc + entry.amount, 0));
-  const plannedRevenue = budget.filter(line => categoryOf(categories, line.categoryId)?.kind === "Receita").reduce((acc, line) => acc + line.values[4], 0);
-  const plannedExpenses = budget.filter(line => categoryOf(categories, line.categoryId)?.kind !== "Receita").reduce((acc, line) => acc + line.values[4], 0);
+// ─── BudgetPage ───────────────────────────────────────────────────────────────
+function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLines }) {
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggle = id => setCollapsed(s => { const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+
+  const addArea = sId => setAreas(p=>[...p,{id:uid(),vId:version.id,sId,name:"Nova área"}]);
+  const delArea = id => { setAreas(p=>p.filter(a=>a.id!==id)); setGroups(p=>p.filter(g=>g.aId!==id)); setLines(p=>p.filter(l=>!(l.pid===id&&l.pt==="a"))); };
+  const renameArea = (id,name) => setAreas(p=>p.map(a=>a.id===id?{...a,name}:a));
+
+  const addGroup = aId => setGroups(p=>[...p,{id:uid(),aId,name:"Novo grupo",mgr:""}]);
+  const delGroup = id => { setGroups(p=>p.filter(g=>g.id!==id)); setLines(p=>p.filter(l=>!(l.pid===id&&l.pt==="g"))); };
+  const renameGroup = (id,k,val) => setGroups(p=>p.map(g=>g.id===id?{...g,[k]:val}:g));
+
+  const addLine = (pid,pt) => setLines(p=>[...p,{id:uid(),pid,pt,name:"Nova linha",v:Array(12).fill(0)}]);
+  const delLine = id => setLines(p=>p.filter(l=>l.id!==id));
+  const renameLine = (id,name) => setLines(p=>p.map(l=>l.id===id?{...l,name}:l));
+  const setVal = (id,i,val) => setLines(p=>p.map(l=>l.id===id?{...l,v:l.v.map((x,j)=>j===i?(+val||0):x)}:l));
+
+  const vAreas  = areas.filter(a=>a.vId===version.id);
+  const totArea = (aId) => {
+    const direct = lines.filter(l=>l.pid===aId&&l.pt==="a").reduce((s,l)=>s+sumV(l.v),0);
+    const viaGroups = groups.filter(g=>g.aId===aId).reduce((s,g)=>s+lines.filter(l=>l.pid===g.id&&l.pt==="g").reduce((ss,l)=>ss+sumV(l.v),0),0);
+    return direct+viaGroups;
+  };
 
   return (
     <main className="page">
-      <PageTitle title="Visão geral" subtitle="Saldos, pendências, resultado previsto e leitura por categoria." />
-      <div className="dashboard-layout">
-        <Panel title="Saldos" action={`${accounts.length} contas`}>
-          <GroupedList
-            rows={accounts.map(account => ({ group:account.group, name:account.name, value:money(account.balance), negative:account.balance < 0 }))}
-          />
-          <div className="panel-total"><span>Total</span><strong>{money(balance)}</strong></div>
-        </Panel>
-        <Panel title="Contas a pagar" action={money(payable)}>
-          <EntryMiniList entries={entries.filter(entry => entry.amount < 0 && entry.status !== "pago")} categories={categories} action="Pagar" />
-        </Panel>
-        <Panel title="Contas a receber" action={money(receivable)}>
-          <EntryMiniList entries={entries.filter(entry => entry.amount > 0 && entry.status !== "recebido")} categories={categories} action="Receber" />
-        </Panel>
-        <Panel title="Resumo financeiro de Maio" action="Caixa">
-          <SummaryRows rows={[
-            ["Saldo atual das contas", money(balance)],
-            ["Total de contas a pagar", money(payable)],
-            ["Total de contas a receber", money(receivable)],
-            ["Resultado previsto", money(balance + receivable - payable)],
-          ]} />
-        </Panel>
-        <Panel title="Planejamento financeiro de Maio" action="Orçamento">
-          <SummaryRows rows={[
-            ["Receita prevista", money(plannedRevenue)],
-            ["Receita realizada", money(revenueMay)],
-            ["Despesas previstas", money(plannedExpenses)],
-            ["Despesas realizadas", money(expenseMay)],
-          ]} />
-          <Progress label="Receita" value={(revenueMay / plannedRevenue) * 100} />
-          <Progress label="Despesas" value={(expenseMay / plannedExpenses) * 100} warn />
-        </Panel>
-        <Panel title="Despesas por categoria de Maio" action="Analítico">
-          <GroupedList
-            rows={categories.filter(category => category.kind !== "Receita").map(category => {
-              const total = Math.abs(entries.filter(entry => entry.categoryId === category.id).reduce((acc, entry) => acc + Math.min(entry.amount, 0), 0));
-              return { group:category.group, name:category.name, value:money(total) };
-            }).filter(row => row.value !== money(0))}
-          />
-        </Panel>
-        <Panel title="Últimos lançamentos" action="Ver todos" wide>
-          <DataTable
-            columns={["Data", "Categoria", "Descrição", "Centro", "Valor"]}
-            rows={entries.map(entry => [
-              entry.date,
-              categoryOf(categories, entry.categoryId)?.name,
-              entry.contact,
-              centerOf(centers, entry.centerId)?.name,
-              <strong key={entry.id} className={entry.amount < 0 ? "negative" : "positive"}>{money(entry.amount)}</strong>,
-            ])}
-          />
-        </Panel>
+      <div className="page-title">
+        <div><h1>Orçamento</h1><p>Planejamento anual por área, grupo e linha de custo · {version.year} · {version.name}</p></div>
+        <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
+      </div>
+      <div className="bt-wrapper">
+        {/* sticky header */}
+        <div className="bt-head">
+          <div className="bt-label-col">Área / Linha de custo</div>
+          <div className="bt-scroll-area">
+            {MONTHS.map(m=><div className="bt-month-col" key={m}>{m}</div>)}
+            <div className="bt-total-col">Total anual</div>
+            <div className="bt-actions-col"/>
+          </div>
+        </div>
+
+        {SECTIONS.map(sec=>{
+          const secAreas = vAreas.filter(a=>a.sId===sec.id);
+          return (
+            <div className="bt-section" key={sec.id}>
+              <div className="bt-section-header">
+                <div className="bt-label-col"><span>{sec.label}</span></div>
+                <div className="bt-scroll-area">
+                  {MONTHS.map((_,i)=>{
+                    const tot = secAreas.flatMap(a=>[
+                      ...lines.filter(l=>l.pid===a.id&&l.pt==="a"),
+                      ...groups.filter(g=>g.aId===a.id).flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g"))
+                    ]).reduce((s,l)=>s+(+l.v[i]||0),0);
+                    return <div className="bt-month-col" key={i}>{fmtN(tot)}</div>;
+                  })}
+                  <div className="bt-total-col"><em>{fmt(secAreas.reduce((s,a)=>s+totArea(a.id),0))}</em></div>
+                  <div className="bt-actions-col"/>
+                </div>
+              </div>
+
+              {secAreas.map(area=>{
+                const areaGroups = groups.filter(g=>g.aId===area.id);
+                const directLines = lines.filter(l=>l.pid===area.id&&l.pt==="a");
+                const aCollapsed = collapsed.has(area.id);
+                return (
+                  <div className="bt-area" key={area.id}>
+                    {/* Area header */}
+                    <div className="bt-area-header">
+                      <div className="bt-label-col">
+                        <button className="bt-chevron" onClick={()=>toggle(area.id)} type="button">
+                          {aCollapsed?<ChevronRight size={14}/>:<ChevronDown size={14}/>}
+                        </button>
+                        <input className="bt-name-input area-name" value={area.name} onChange={e=>renameArea(area.id,e.target.value)} />
+                      </div>
+                      <div className="bt-scroll-area">
+                        {MONTHS.map((_,i)=>{
+                          const tot = [
+                            ...directLines,
+                            ...areaGroups.flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g"))
+                          ].reduce((s,l)=>s+(+l.v[i]||0),0);
+                          return <div className="bt-month-col mono dim" key={i}>{fmtN(tot)}</div>;
+                        })}
+                        <div className="bt-total-col mono">{fmt(totArea(area.id))}</div>
+                        <div className="bt-actions-col">
+                          <button className="bt-icon-btn add" title="Novo grupo" onClick={()=>addGroup(area.id)} type="button"><Plus size={12}/></button>
+                          <button className="bt-icon-btn del" title="Excluir área" onClick={()=>delArea(area.id)} type="button"><Trash2 size={12}/></button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!aCollapsed && (<>
+                      {/* Groups */}
+                      {areaGroups.map(grp=>{
+                        const gLines = lines.filter(l=>l.pid===grp.id&&l.pt==="g");
+                        const gCollapsed = collapsed.has(grp.id);
+                        return (
+                          <div className="bt-group" key={grp.id}>
+                            <div className="bt-group-header">
+                              <div className="bt-label-col">
+                                <button className="bt-chevron" onClick={()=>toggle(grp.id)} type="button">
+                                  {gCollapsed?<ChevronRight size={13}/>:<ChevronDown size={13}/>}
+                                </button>
+                                <input className="bt-name-input group-name" value={grp.name} onChange={e=>renameGroup(grp.id,"name",e.target.value)} />
+                                <input className="bt-mgr-input" value={grp.mgr} onChange={e=>renameGroup(grp.id,"mgr",e.target.value)} placeholder="Responsável" />
+                              </div>
+                              <div className="bt-scroll-area">
+                                {MONTHS.map((_,i)=>(
+                                  <div className="bt-month-col mono dim" key={i}>{fmtN(gLines.reduce((s,l)=>s+(+l.v[i]||0),0))}</div>
+                                ))}
+                                <div className="bt-total-col mono">{fmt(gLines.reduce((s,l)=>s+sumV(l.v),0))}</div>
+                                <div className="bt-actions-col">
+                                  <button className="bt-icon-btn add" title="Nova linha" onClick={()=>addLine(grp.id,"g")} type="button"><Plus size={12}/></button>
+                                  <button className="bt-icon-btn del" title="Excluir grupo" onClick={()=>delGroup(grp.id)} type="button"><Trash2 size={12}/></button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {!gCollapsed && gLines.map(line=>(
+                              <LineRow key={line.id} line={line} onRename={renameLine} onVal={setVal} onDel={delLine} />
+                            ))}
+
+                            {!gCollapsed && (
+                              <div className="bt-add-row">
+                                <button onClick={()=>addLine(grp.id,"g")} type="button"><Plus size={11}/> Nova linha</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Direct lines (sem grupo) */}
+                      {directLines.map(line=>(
+                        <LineRow key={line.id} line={line} onRename={renameLine} onVal={setVal} onDel={delLine} direct />
+                      ))}
+
+                      <div className="bt-add-row area-add">
+                        <button onClick={()=>addGroup(area.id)} type="button"><Plus size={11}/> Novo grupo</button>
+                        <button onClick={()=>addLine(area.id,"a")} type="button"><Plus size={11}/> Nova linha direta</button>
+                      </div>
+                    </>)}
+                  </div>
+                );
+              })}
+
+              <div className="bt-add-area">
+                <button onClick={()=>addArea(sec.id)} type="button"><Plus size={12}/> Nova área</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </main>
   );
 }
 
-function EntriesPage({ entries, setEntries, categories, centers, setModal }) {
-  const [status, setStatus] = useState("todos");
-  const [mode, setMode] = useState("Caixa");
-  const [typeFilter, setTypeFilter] = useState("todos");
-  const [selectedId, setSelectedId] = useState(entries[0]?.id);
-  const [openActionId, setOpenActionId] = useState(null);
-  const filtered = entries.filter(entry => {
-    const statusOk = status === "todos" || entry.status === status;
-    const typeOk = typeFilter === "todos" || entry.type === typeFilter;
-    return statusOk && typeOk;
-  });
-  const balanceBefore = -3811840.6;
-  const rowsWithBalance = filtered.reduce((acc, entry) => {
-    const previous = acc.length ? acc[acc.length - 1].balance : balanceBefore;
-    return [...acc, { ...entry, balance:previous + entry.amount }];
-  }, []);
-  const totals = {
-    openPayable:Math.abs(entries.filter(entry => ["a_pagar", "aprovar"].includes(entry.status)).reduce((acc, entry) => acc + Math.min(entry.amount, 0), 0)),
-    openReceivable:entries.filter(entry => entry.status === "a_receber").reduce((acc, entry) => acc + Math.max(entry.amount, 0), 0),
-    paid:Math.abs(entries.filter(entry => ["pago", "recebido"].includes(entry.status)).reduce((acc, entry) => acc + entry.amount, 0)),
-    review:entries.filter(entry => !entry.reviewed).length,
+function ValInput({ value, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [raw, setRaw] = useState(String(value || ""));
+  useEffect(() => { if (!editing) setRaw(String(value || "")); }, [value, editing]);
+  return (
+    <input
+      className="bt-val-input"
+      value={editing ? raw : (value ? fmtN(value) : "")}
+      placeholder="0"
+      onFocus={() => { setEditing(true); setRaw(String(value || "")); }}
+      onBlur={() => { setEditing(false); onChange(raw); }}
+      onChange={e => setRaw(e.target.value)}
+    />
+  );
+}
+
+function LineRow({ line, onRename, onVal, onDel, direct=false }) {
+  return (
+    <div className={`bt-line${direct?" direct":""}`}>
+      <div className="bt-label-col">
+        <span className="bt-line-indent"/>
+        <input className="bt-name-input line-name" value={line.name} onChange={e=>onRename(line.id,e.target.value)} />
+      </div>
+      <div className="bt-scroll-area">
+        {line.v.map((val,i)=>(
+          <div className="bt-month-col" key={i}>
+            <ValInput value={val} onChange={v=>onVal(line.id,i,v)} />
+          </div>
+        ))}
+        <div className="bt-total-col mono strong">{fmt(sumV(line.v))}</div>
+        <div className="bt-actions-col">
+          <button className="bt-icon-btn del" onClick={()=>onDel(line.id)} type="button"><Trash2 size={12}/></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RealizedPage ─────────────────────────────────────────────────────────────
+function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggle = id => setCollapsed(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+
+  const setActual = (lineId, i, val) =>
+    setActuals(prev => ({
+      ...prev,
+      [lineId]: (prev[lineId] ?? Array(12).fill(0)).map((x,j) => j===i ? (+val||0) : x),
+    }));
+
+  const lineActual = id => actuals[id] ?? Array(12).fill(0);
+  const sumGroup = (gId) => lines.filter(l=>l.pid===gId&&l.pt==="g").reduce((s,l)=>s+sumV(lineActual(l.id)),0);
+  const sumArea  = (aId) => {
+    const direct = lines.filter(l=>l.pid===aId&&l.pt==="a").reduce((s,l)=>s+sumV(lineActual(l.id)),0);
+    const viaGroups = groups.filter(g=>g.aId===aId).reduce((s,g)=>s+sumGroup(g.id),0);
+    return direct+viaGroups;
   };
-  const periodGain = filtered.filter(entry => entry.amount > 0 && entry.type !== "transfer").reduce((acc, entry) => acc + entry.amount, 0);
-  const periodExpense = filtered.filter(entry => entry.amount < 0).reduce((acc, entry) => acc + entry.amount, 0);
-  const periodResult = periodGain + periodExpense;
-  const duplicateEntry = entry => {
-    setEntries(prev => [{ ...entry, id:`e-${Date.now()}`, status:entry.type === "gain" ? "a_receber" : entry.type === "expense" ? "a_pagar" : "transferido", reviewed:false, reconciled:false, document:`${entry.document}-CÓPIA` }, ...prev]);
-    setOpenActionId(null);
-  };
-  const deleteEntry = entry => {
-    setEntries(prev => prev.filter(item => item.id !== entry.id));
-    setOpenActionId(null);
-  };
-  const rowActionLabel = entry => {
-    if (["pago", "recebido", "transferido"].includes(entry.status)) return "Recibo";
-    if (entry.type === "gain") return "Receber";
-    if (entry.type === "transfer") return "Transferir";
-    return "Pagar";
-  };
+
+  const vAreas = areas.filter(a=>a.vId===version.id);
 
   return (
     <main className="page">
-      <PageTitle title="Lançamentos" subtitle="Base transacional do sistema: receitas, despesas, agendamentos, baixas, recorrências e transferências." />
-      <div className="page-toolbar">
-        <IconButton icon={FileOutput} tone="danger" onClick={() => setModal("expense")}>REGISTRAR GASTO</IconButton>
-        <IconButton icon={FileInput} tone="success" onClick={() => setModal("gain")}>REGISTRAR GANHO</IconButton>
-        <IconButton icon={ArrowLeftRight} tone="info" onClick={() => setModal("transfer")}>REGISTRAR TRANSFERÊNCIA</IconButton>
-        <IconButton icon={Database}>IMPORTAR REGISTROS</IconButton>
-        <IconButton icon={CheckCircle2}>CONCILIAÇÃO</IconButton>
+      <div className="page-title">
+        <div><h1>Realizado</h1><p>Lançamentos realizados por área e linha de custo · {version.year} · acum. até {MONTHS[REALIZED_THRU-1]}</p></div>
+        <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
       </div>
-      <Panel>
-        <div className="granatum-tabs">
-          <button className="filter-tab" type="button">Meus filtros</button>
-          <button className="filter-tab active" type="button">Todos</button>
-          <span className="locked-link">Bloquear lançamentos</span>
-        </div>
-        <div className="cashline">
-          <div className="segmented">
-            {["Caixa", "Competência"].map(item => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)} type="button">{item}</button>)}
+      <div className="bt-wrapper">
+        <div className="bt-head">
+          <div className="bt-label-col">Área / Linha de custo</div>
+          <div className="bt-scroll-area">
+            {MONTHS.map((m,i)=><div className="bt-month-col" key={m} style={i>=REALIZED_THRU?{opacity:.35}:{}}>{m}</div>)}
+            <div className="bt-total-col">Total realiz.</div>
+            <div className="bt-actions-col"/>
           </div>
-          <div className="date-switch">
-            <button type="button">‹</button>
-            <strong>11/05/2026</strong>
-            <button type="button">›</button>
+        </div>
+
+        {SECTIONS.map(sec=>{
+          const secAreas = vAreas.filter(a=>a.sId===sec.id);
+          return (
+            <div className="bt-section" key={sec.id}>
+              <div className="bt-section-header">
+                <div className="bt-label-col"><span>{sec.label}</span></div>
+                <div className="bt-scroll-area">
+                  {MONTHS.map((_,i)=>{
+                    const tot = secAreas.flatMap(a=>[
+                      ...lines.filter(l=>l.pid===a.id&&l.pt==="a"),
+                      ...groups.filter(g=>g.aId===a.id).flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g"))
+                    ]).reduce((s,l)=>s+(+lineActual(l.id)[i]||0),0);
+                    return <div className="bt-month-col" key={i} style={i>=REALIZED_THRU?{opacity:.35}:{}}>{tot?fmtN(tot):""}</div>;
+                  })}
+                  <div className="bt-total-col"><em>{fmt(secAreas.reduce((s,a)=>s+sumArea(a.id),0))}</em></div>
+                  <div className="bt-actions-col"/>
+                </div>
+              </div>
+
+              {secAreas.map(area=>{
+                const areaGroups = groups.filter(g=>g.aId===area.id);
+                const directLines = lines.filter(l=>l.pid===area.id&&l.pt==="a");
+                const aCollapsed = collapsed.has(area.id);
+                return (
+                  <div className="bt-area" key={area.id}>
+                    <div className="bt-area-header">
+                      <div className="bt-label-col">
+                        <button className="bt-chevron" onClick={()=>toggle(area.id)} type="button">
+                          {aCollapsed?<ChevronRight size={14}/>:<ChevronDown size={14}/>}
+                        </button>
+                        <strong>{area.name}</strong>
+                      </div>
+                      <div className="bt-scroll-area">
+                        {MONTHS.map((_,i)=>{
+                          const tot=[...directLines,...areaGroups.flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g"))].reduce((s,l)=>s+(+lineActual(l.id)[i]||0),0);
+                          return <div className="bt-month-col mono dim" key={i} style={i>=REALIZED_THRU?{opacity:.35}:{}}>{tot?fmtN(tot):""}</div>;
+                        })}
+                        <div className="bt-total-col mono">{fmt(sumArea(area.id))}</div>
+                        <div className="bt-actions-col"/>
+                      </div>
+                    </div>
+
+                    {!aCollapsed && (<>
+                      {areaGroups.map(grp=>{
+                        const gLines = lines.filter(l=>l.pid===grp.id&&l.pt==="g");
+                        const gCollapsed = collapsed.has(grp.id);
+                        return (
+                          <div className="bt-group" key={grp.id}>
+                            <div className="bt-group-header">
+                              <div className="bt-label-col">
+                                <button className="bt-chevron" onClick={()=>toggle(grp.id)} type="button">
+                                  {gCollapsed?<ChevronRight size={13}/>:<ChevronDown size={13}/>}
+                                </button>
+                                <span>{grp.name}</span>
+                              </div>
+                              <div className="bt-scroll-area">
+                                {MONTHS.map((_,i)=>{
+                                  const tot=gLines.reduce((s,l)=>s+(+lineActual(l.id)[i]||0),0);
+                                  return <div className="bt-month-col mono dim" key={i} style={i>=REALIZED_THRU?{opacity:.35}:{}}>{tot?fmtN(tot):""}</div>;
+                                })}
+                                <div className="bt-total-col mono">{fmt(sumGroup(grp.id))}</div>
+                                <div className="bt-actions-col"/>
+                              </div>
+                            </div>
+                            {!gCollapsed && gLines.map(line=>{
+                              const act = lineActual(line.id);
+                              return (
+                                <div className="bt-line" key={line.id}>
+                                  <div className="bt-label-col">
+                                    <span className="bt-line-indent"/>
+                                    <span className="line-label">{line.name}</span>
+                                  </div>
+                                  <div className="bt-scroll-area">
+                                    {act.map((val,i)=>(
+                                      <div className="bt-month-col" key={i} style={i>=REALIZED_THRU?{opacity:.35}:{}}>
+                                        <ValInput value={val} onChange={v=>setActual(line.id,i,v)} />
+                                      </div>
+                                    ))}
+                                    <div className="bt-total-col mono strong">{fmt(sumV(act))}</div>
+                                    <div className="bt-actions-col"/>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {directLines.map(line=>{
+                        const act = lineActual(line.id);
+                        return (
+                          <div className="bt-line direct" key={line.id}>
+                            <div className="bt-label-col">
+                              <span className="bt-line-indent"/>
+                              <span className="line-label">{line.name}</span>
+                            </div>
+                            <div className="bt-scroll-area">
+                              {act.map((val,i)=>(
+                                <div className="bt-month-col" key={i} style={i>=REALIZED_THRU?{opacity:.35}:{}}>
+                                  <ValInput value={val} onChange={v=>setActual(line.id,i,v)} />
+                                </div>
+                              ))}
+                              <div className="bt-total-col mono strong">{fmt(sumV(act))}</div>
+                              <div className="bt-actions-col"/>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </main>
+  );
+}
+
+// ─── ComparisonPage ───────────────────────────────────────────────────────────
+function ComparisonPage({ version, areas, groups, lines, actuals }) {
+  const [collapsed, setCollapsed] = useState(new Set());
+  const toggle = id => setCollapsed(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+
+  const vAreas = areas.filter(a=>a.vId===version.id);
+
+  const lineActual = (lineId) => actuals[lineId] ?? Array(12).fill(0);
+  const sumActual  = (lineIds) => lineIds.reduce((s,id)=>s+sumV(lineActual(id)),0);
+  const sumBudget  = (lineIds) => lineIds.reduce((s,id)=>s+sumV(lines.find(l=>l.id===id)?.v??[]),0);
+
+  const diffClass = (b,r) => !r||!b?"":r>b?"over":"under";
+
+  return (
+    <main className="page">
+      <div className="page-title">
+        <div><h1>Orçado × Realizado</h1><p>Comparativo acumulado até {MONTHS[REALIZED_THRU-1]} · {version.year} · {version.name}</p></div>
+      </div>
+      <div className="bt-wrapper comparison">
+        <div className="bt-head">
+          <div className="bt-label-col">Área / Linha de custo</div>
+          <div className="bt-scroll-area">
+            <div className="bt-cmp-pair hdr"><span>Orçado anual</span><span>Realizado</span><span>Δ</span></div>
+            {MONTHS.slice(0,REALIZED_THRU).map(m=>(
+              <div className="bt-cmp-pair hdr" key={m}><span>{m} Orç.</span><span>{m} Real.</span><span>%</span></div>
+            ))}
           </div>
-          <div className="period-switch">
-            {["Dia", "Semana", "Mês", "Ano", "Hoje"].map((item, index) => <button className={index === 0 ? "active" : ""} key={item} type="button">{item}</button>)}
+        </div>
+
+        {SECTIONS.map(sec=>{
+          const secAreas = vAreas.filter(a=>a.sId===sec.id);
+          const secLines = secAreas.flatMap(a=>{
+            const gs = groups.filter(g=>g.aId===a.id).flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g").map(l=>l.id));
+            const dl = lines.filter(l=>l.pid===a.id&&l.pt==="a").map(l=>l.id);
+            return [...gs,...dl];
+          });
+          return (
+            <div className="bt-section" key={sec.id}>
+              <div className="bt-section-header">
+                <div className="bt-label-col"><span>{sec.label}</span></div>
+                <div className="bt-scroll-area">
+                  <div className={`bt-cmp-pair ${diffClass(sumBudget(secLines),sumActual(secLines))}`}>
+                    <span>{fmtN(sumBudget(secLines))}</span>
+                    <span>{sumActual(secLines)?fmtN(sumActual(secLines)):"–"}</span>
+                    <span className="diff">{pct(sumActual(secLines),sumBudget(secLines))}</span>
+                  </div>
+                  {Array.from({length:REALIZED_THRU},(_,mi)=>{
+                    const mo = secLines.reduce((s,id)=>s+(+lines.find(l=>l.id===id)?.v[mi]||0),0);
+                    const mr = secLines.reduce((s,id)=>s+(+lineActual(id)[mi]||0),0);
+                    return (
+                      <div className={`bt-cmp-pair ${diffClass(mo,mr)}`} key={mi}>
+                        <span>{mo?fmtN(mo):"–"}</span>
+                        <span>{mr?fmtN(mr):"–"}</span>
+                        <span className="diff">{pct(mr,mo)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {secAreas.map(area=>{
+                const areaGroups = groups.filter(g=>g.aId===area.id);
+                const directLines = lines.filter(l=>l.pid===area.id&&l.pt==="a");
+                const aLineIds = [...areaGroups.flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g").map(l=>l.id)),...directLines.map(l=>l.id)];
+                const aOrc = sumBudget(aLineIds);
+                const aReal= sumActual(aLineIds);
+                const aCol  = collapsed.has(area.id);
+                return (
+                  <div className="bt-area" key={area.id}>
+                    <div className="bt-area-header">
+                      <div className="bt-label-col">
+                        <button className="bt-chevron" onClick={()=>toggle(area.id)} type="button">
+                          {aCol?<ChevronRight size={14}/>:<ChevronDown size={14}/>}
+                        </button>
+                        <strong>{area.name}</strong>
+                      </div>
+                      <div className="bt-scroll-area">
+                        <div className={`bt-cmp-pair ${diffClass(aOrc,aReal)}`}>
+                          <span>{fmtN(aOrc)}</span>
+                          <span>{aReal?fmtN(aReal):"–"}</span>
+                          <span className="diff">{pct(aReal,aOrc)}</span>
+                        </div>
+                        {Array.from({length:REALIZED_THRU},(_,mi)=>{
+                          const mo = aLineIds.reduce((s,id)=>s+(+lines.find(l=>l.id===id)?.v[mi]||0),0);
+                          const mr = aLineIds.reduce((s,id)=>s+(+lineActual(id)[mi]||0),0);
+                          return (
+                            <div className={`bt-cmp-pair ${diffClass(mo,mr)}`} key={mi}>
+                              <span>{mo?fmtN(mo):"–"}</span>
+                              <span>{mr?fmtN(mr):"–"}</span>
+                              <span className="diff">{pct(mr,mo)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {!aCol && (<>
+                      {areaGroups.map(grp=>{
+                        const gLines = lines.filter(l=>l.pid===grp.id&&l.pt==="g");
+                        const gIds = gLines.map(l=>l.id);
+                        const gOrc = sumBudget(gIds); const gReal = sumActual(gIds);
+                        const gCol = collapsed.has(grp.id);
+                        return (
+                          <div className="bt-group" key={grp.id}>
+                            <div className="bt-group-header">
+                              <div className="bt-label-col">
+                                <button className="bt-chevron" onClick={()=>toggle(grp.id)} type="button">
+                                  {gCol?<ChevronRight size={13}/>:<ChevronDown size={13}/>}
+                                </button>
+                                <span className="group-name">{grp.name}</span>
+                              </div>
+                              <div className="bt-scroll-area">
+                                <div className={`bt-cmp-pair ${diffClass(gOrc,gReal)}`}>
+                                  <span>{fmtN(gOrc)}</span>
+                                  <span>{gReal?fmtN(gReal):"–"}</span>
+                                  <span className="diff">{pct(gReal,gOrc)}</span>
+                                </div>
+                                {Array.from({length:REALIZED_THRU},(_,mi)=>{
+                                  const mo = gIds.reduce((s,id)=>s+(+lines.find(l=>l.id===id)?.v[mi]||0),0);
+                                  const mr = gIds.reduce((s,id)=>s+(+lineActual(id)[mi]||0),0);
+                                  return (
+                                    <div className={`bt-cmp-pair ${diffClass(mo,mr)}`} key={mi}>
+                                      <span>{mo?fmtN(mo):"–"}</span><span>{mr?fmtN(mr):"–"}</span><span className="diff">{pct(mr,mo)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {!gCol && gLines.map(line=>{
+                              const act = lineActual(line.id);
+                              const totV = sumV(line.v), totA = sumV(act);
+                              return (
+                                <div className="bt-line" key={line.id}>
+                                  <div className="bt-label-col"><span className="bt-line-indent"/><span className="line-label">{line.name}</span></div>
+                                  <div className="bt-scroll-area">
+                                    <div className={`bt-cmp-pair ${diffClass(totV,totA)}`}>
+                                      <span>{totV?fmtN(totV):"–"}</span>
+                                      <span>{totA?fmtN(totA):"–"}</span>
+                                      <span className="diff">{pct(totA,totV)}</span>
+                                    </div>
+                                    {Array.from({length:REALIZED_THRU},(_,mi)=>(
+                                      <div className={`bt-cmp-pair ${diffClass(line.v[mi],act[mi])}`} key={mi}>
+                                        <span>{line.v[mi]?fmtN(line.v[mi]):"–"}</span>
+                                        <span>{act[mi]?fmtN(act[mi]):"–"}</span>
+                                        <span className="diff">{pct(act[mi],line.v[mi])}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {directLines.map(line=>{
+                        const act = lineActual(line.id);
+                        const totV = sumV(line.v), totA = sumV(act);
+                        return (
+                          <div className="bt-line direct" key={line.id}>
+                            <div className="bt-label-col"><span className="bt-line-indent"/><span className="line-label">{line.name}</span></div>
+                            <div className="bt-scroll-area">
+                              <div className={`bt-cmp-pair ${diffClass(totV,totA)}`}>
+                                <span>{totV?fmtN(totV):"–"}</span><span>{totA?fmtN(totA):"–"}</span><span className="diff">{pct(totA,totV)}</span>
+                              </div>
+                              {Array.from({length:REALIZED_THRU},(_,mi)=>(
+                                <div className={`bt-cmp-pair ${diffClass(line.v[mi],act[mi])}`} key={mi}>
+                                  <span>{line.v[mi]?fmtN(line.v[mi]):"–"}</span>
+                                  <span>{act[mi]?fmtN(act[mi]):"–"}</span>
+                                  <span className="diff">{pct(act[mi],line.v[mi])}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </main>
+  );
+}
+
+// ─── SummaryPage ──────────────────────────────────────────────────────────────
+function SummaryPage({ version, areas, groups, lines, actuals }) {
+  const vAreas = areas.filter(a=>a.vId===version.id);
+  const lineActual = id => actuals[id] ?? Array(12).fill(0);
+
+  const rows = useMemo(()=>SECTIONS.map(sec=>{
+    const secAreas = vAreas.filter(a=>a.sId===sec.id);
+    const areaRows = secAreas.map(area=>{
+      const gLineIds = groups.filter(g=>g.aId===area.id).flatMap(g=>lines.filter(l=>l.pid===g.id&&l.pt==="g").map(l=>l.id));
+      const dLineIds = lines.filter(l=>l.pid===area.id&&l.pt==="a").map(l=>l.id);
+      const all = [...gLineIds,...dLineIds];
+      const orc = all.reduce((s,id)=>s+sumV(lines.find(l=>l.id===id)?.v??[]),0);
+      const real= all.reduce((s,id)=>s+sumV(lineActual(id)),0);
+      return { id:area.id, name:area.name, orc, real, aderencia: orc?real/orc:0 };
+    });
+    const totOrc = areaRows.reduce((s,r)=>s+r.orc,0);
+    const totReal = areaRows.reduce((s,r)=>s+r.real,0);
+    return { sec, areaRows, totOrc, totReal };
+  }),[vAreas,groups,lines,actuals]);
+
+  const grandOrc  = rows.filter(r=>r.sec.kind==="expense").reduce((s,r)=>s+r.totOrc,0);
+  const grandReal = rows.filter(r=>r.sec.kind==="expense").reduce((s,r)=>s+r.totReal,0);
+  const recOrc    = rows.find(r=>r.sec.id==="receitas")?.totOrc??0;
+  const recReal   = rows.find(r=>r.sec.id==="receitas")?.totReal??0;
+
+  return (
+    <main className="page">
+      <div className="page-title">
+        <div><h1>Resumo por Área</h1><p>Totais orçados e realizados · acumulado até {MONTHS[REALIZED_THRU-1]} · {version.year}</p></div>
+      </div>
+      <div className="summary-kpis">
+        <KPI label="Receita orçada"   value={fmt(recOrc)}   />
+        <KPI label="Receita realizada" value={fmt(recReal)}  positive />
+        <KPI label="Despesas orçadas" value={fmt(grandOrc)} />
+        <KPI label="Despesas realizadas" value={fmt(grandReal)} />
+        <KPI label="Resultado orçado" value={fmt(recOrc-grandOrc)} positive />
+        <KPI label="Resultado realizado" value={fmt(recReal-grandReal)} positive />
+      </div>
+      {rows.map(({sec,areaRows,totOrc,totReal})=>(
+        <div className="summary-section" key={sec.id}>
+          <div className="summary-section-header">
+            <span>{sec.label}</span>
+            <span>{fmt(totOrc)}</span>
+            <span>{fmt(totReal)}</span>
+            <span/>
           </div>
-          <select defaultValue="Todas as contas"><option>Todas as contas</option><option>Itaú Principal</option><option>Cartão Corporativo</option></select>
-          <select defaultValue="Todos os centros"><option>Todos os centros de custo</option>{centers.map(center => <option key={center.id}>{center.name}</option>)}</select>
-          <button className="btn"><ListFilter size={15} /> Mais filtros</button>
-          <button className="btn icon-only"><Search size={15} /></button>
-        </div>
-        <div className="bulkbar">
-          <button type="button">Selecionar todos</button>
-          <button type="button">Pagar/Receber</button>
-          <button type="button">Transferir</button>
-          <button type="button">Editar</button>
-          <button type="button">Excluir</button>
-          <span />
-          <button type="button">Exportar</button>
-          <button type="button">Imprimir</button>
-        </div>
-        <div className="entry-tabs compact">
-            {[
-              ["todos", "Todos"],
-              ["expense", "Gastos"],
-              ["gain", "Ganhos"],
-              ["transfer", "Transferências"],
-            ].map(([id, label]) => <button key={id} className={typeFilter === id ? "active" : ""} onClick={() => setTypeFilter(id)} type="button">{label}</button>)}
-          <select value={status} onChange={event => setStatus(event.target.value)}>
-            <option value="todos">Todos os status</option>
-            {Object.entries(statusLabel).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </select>
-        </div>
-        <div className="entry-kpis compact">
-          <Metric label="A pagar / aprovar" value={money(totals.openPayable)} />
-          <Metric label="A receber" value={money(totals.openReceivable)} />
-          <Metric label="Baixados" value={money(totals.paid)} positive />
-          <Metric label="Pendentes de revisão" value={String(totals.review)} />
-        </div>
-        <div className="ledger-table granatum-like">
-          <table className="data-table">
+          <table className="summary-table">
             <thead>
-              <tr>
-                <th></th>
-                <th>Data</th>
-                <th>Categoria</th>
-                <th>Descrição</th>
-                <th>C. Custo/Lucro</th>
-                <th>Cliente/Fornecedor</th>
-                <th></th>
-                <th>Valor</th>
-                <th>Saldo</th>
-                <th></th>
-                <th></th>
-              </tr>
+              <tr><th>Área</th><th>Orçado anual</th><th>Realizado acum.</th><th>Aderência</th><th>Barra</th></tr>
             </thead>
             <tbody>
-              <tr className="previous-balance">
-                <td></td>
-                <td colSpan={7}>Saldo anterior a 11 de Maio de 2026</td>
-                <td>{money(balanceBefore)}</td>
-                <td></td>
-                <td></td>
-              </tr>
-              {rowsWithBalance.map(entry => (
-                <tr key={entry.id} className={selectedId === entry.id ? "selected-row" : ""} onClick={() => setSelectedId(entry.id)}>
-                  <td><input type="checkbox" /></td>
-                  <td><strong>{entry.dueDate.slice(8, 10)} Mai</strong></td>
-                  <td><span className={`category-tag tag-${entry.categoryId}`}>{categoryOf(categories, entry.categoryId)?.name}</span></td>
-                  <td>
-                    <a>{entry.contact}</a>
-                    <small>{entry.document} · {entry.installments} · {entry.recurrence}</small>
-                    <span className={`entry-status status-${entry.status}`}>{statusLabel[entry.status]}</span>
-                  </td>
-                  <td>{centerOf(centers, entry.centerId)?.name}</td>
-                  <td>{entry.contact}</td>
-                  <td>{entry.recurrence !== "Único" && <span className="repeat-badge">{entry.recurrence}</span>}</td>
-                  <td><strong className={entry.amount < 0 ? "negative" : "positive"}>{money(entry.amount)}</strong></td>
-                  <td>{selectedId === entry.id ? money(entry.balance) : ""}</td>
-                  <td>
-                    <button className="row-action" onClick={event => {
-                      event.stopPropagation();
-                      if (["pago", "recebido", "transferido"].includes(entry.status)) setModal({ mode:"receipt", entryId:entry.id });
-                      else setModal({ mode:"settle", entryId:entry.id });
-                    }} type="button">{rowActionLabel(entry)}</button>
-                  </td>
-                  <td className="row-menu-cell">
-                    <button className="row-menu" onClick={event => {
-                      event.stopPropagation();
-                      setOpenActionId(openActionId === entry.id ? null : entry.id);
-                    }} type="button">⋮</button>
-                    {openActionId === entry.id && (
-                      <div className="row-actions-menu">
-                        <button onClick={event => { event.stopPropagation(); setModal({ mode:"edit", entryId:entry.id }); setOpenActionId(null); }} type="button">Editar lançamento</button>
-                        {!["pago", "recebido", "transferido"].includes(entry.status) && <button onClick={event => { event.stopPropagation(); setModal({ mode:"settle", entryId:entry.id }); setOpenActionId(null); }} type="button">{entry.type === "gain" ? "Receber lançamento" : entry.type === "transfer" ? "Transferir lançamento" : "Pagar lançamento"}</button>}
-                        <button onClick={event => { event.stopPropagation(); setModal({ mode:"receipt", entryId:entry.id }); setOpenActionId(null); }} type="button">Recibo</button>
-                        <button onClick={event => { event.stopPropagation(); duplicateEntry(entry); }} type="button">Duplicar lançamento</button>
-                        <button className="danger-action" onClick={event => { event.stopPropagation(); deleteEntry(entry); }} type="button">Excluir lançamento</button>
-                      </div>
-                    )}
-                  </td>
+              {areaRows.map(r=>(
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td className="mono">{fmt(r.orc)}</td>
+                  <td className="mono">{fmt(r.real)}</td>
+                  <td className={`mono ${r.aderencia>1?"over":r.aderencia>0.9?"":"under"}`}>{(r.aderencia*100).toFixed(1).replace(".",",")}%</td>
+                  <td><div className="adh-bar"><div className={r.aderencia>1?"fill over":"fill"} style={{width:`${Math.min(r.aderencia,1)*100}%`}}/></div></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="period-summary">
-          <div><span>Resumo do período</span></div>
-          <div><span>Total de ganhos</span><strong className="positive">{money(periodGain)}</strong></div>
-          <div><span>Total de gastos</span><strong className="negative">{money(periodExpense)}</strong></div>
-          <div><span>Resultado do período</span><strong className={periodResult < 0 ? "negative" : "positive"}>{money(periodResult)}</strong></div>
-          <div><span>Saldo previsto em 11 de Maio de 2026</span><strong>{money(balanceBefore + periodResult)}</strong></div>
-        </div>
-      </Panel>
-      <div className="entry-schema-note">
-        <strong>Campos que viram banco:</strong> empresa, tipo, status, vencimento, baixa, competência, categoria, centro, contato, conta, forma de pagamento, recorrência, parcela, valor, saldo calculado, anexos, origem, revisão e conciliação.
-      </div>
+      ))}
     </main>
   );
 }
 
-function BudgetPage({ budget, setBudget, categories, centers, company }) {
-  const [view, setView] = useState("Agrupar por mês");
-  const revenue = budget.filter(line => categoryOf(categories, line.categoryId)?.kind === "Receita").reduce((acc, line) => acc + lineTotal(line), 0);
-  const expenses = budget.filter(line => categoryOf(categories, line.categoryId)?.kind !== "Receita").reduce((acc, line) => acc + lineTotal(line), 0);
-
-  const updateValue = (lineId, index, value) => {
-    setBudget(prev => prev.map(line => line.id === lineId ? { ...line, values:line.values.map((item, valueIndex) => valueIndex === index ? Number(value) || 0 : item) } : line));
-  };
-
-  const addLine = centerId => {
-    setBudget(prev => [...prev, { id:`b${prev.length + 1}`, centerId, categoryId:centerId === "receita" ? "receita" : "tecnologia", line:"Nova linha", driver:"Manual", automatic:false, values:months.map(() => 0) }]);
-  };
-
+function KPI({ label, value, positive=false }) {
   return (
-    <main className="page">
-      <PageTitle title="Orçamento" subtitle="Orçamento anual com previsto, realizado e diferença por mês, categoria e centro." />
-      <div className="page-toolbar">
-        <IconButton icon={Plus}>CRIAR ORÇAMENTO</IconButton>
-        <select defaultValue="2026"><option>2026</option><option>Forecast 2026</option><option>Base 2027</option></select>
-        <select defaultValue="Caixa"><option>Caixa</option><option>Competência</option></select>
-        <select value={view} onChange={event => setView(event.target.value)}><option>Agrupar por mês</option><option>Trimestral</option><option>Semestral</option><option>Anual</option><option>YTD</option></select>
-        <IconButton icon={Fullscreen}>Tela cheia</IconButton>
-        <IconButton icon={FileDown}>Exportar CSV</IconButton>
-        <IconButton icon={Printer}>Imprimir</IconButton>
-      </div>
-      <div className="metrics-row">
-        <Metric label="Receita orçada" value={money(revenue)} />
-        <Metric label="Despesas orçadas" value={money(expenses)} />
-        <Metric label="Saldo final previsto" value={money(revenue - expenses)} positive />
-        <Metric label="Regime tributário" value={company.taxRegime} />
-      </div>
-      <Panel>
-        <div className="budget-board">
-          {centers.map(center => {
-            const lines = budget.filter(line => line.centerId === center.id);
-            return (
-              <section className="budget-group" key={center.id}>
-                <div className="budget-group-head">
-                  <div><strong>{center.name}</strong><span>{center.manager}</span></div>
-                  <button className="btn" onClick={() => addLine(center.id)} type="button"><Plus size={15} /> Linha</button>
-                </div>
-                <table className="budget-table">
-                  <thead>
-                    <tr>
-                      <th>Categoria</th>
-                      <th>Linha</th>
-                      <th>Driver</th>
-                      {months.map(month => <th key={month}>{month}</th>)}
-                      <th>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map(line => (
-                      <tr key={line.id} className={line.automatic ? "auto-row" : ""}>
-                        <td>
-                          <select value={line.categoryId} onChange={event => setBudget(prev => prev.map(item => item.id === line.id ? { ...item, categoryId:event.target.value } : item))}>
-                            {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-                          </select>
-                          <small>{categoryOf(categories, line.categoryId)?.group}</small>
-                        </td>
-                        <td><input value={line.line} onChange={event => setBudget(prev => prev.map(item => item.id === line.id ? { ...item, line:event.target.value } : item))} /></td>
-                        <td><span className={line.automatic ? "pill amber" : "pill"}>{line.driver}</span></td>
-                        {line.values.map((value, index) => (
-                          <td key={`${line.id}-${months[index]}`}>
-                            <div className="triple-cell">
-                              <input disabled={line.automatic} value={value} onChange={event => updateValue(line.id, index, event.target.value)} />
-                              <small>Real. {compactMoney(value * .92)}</small>
-                              <small>Dif. {compactMoney(value * -.08)}</small>
-                            </div>
-                          </td>
-                        ))}
-                        <td className="total">{money(lineTotal(line))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            );
-          })}
-        </div>
-      </Panel>
-    </main>
-  );
-}
-
-function ReportsPage({ budget, categories }) {
-  const receita = budget.filter(line => categoryOf(categories, line.categoryId)?.kind === "Receita").reduce((acc, line) => acc + lineTotal(line), 0);
-  const deducoes = budget.filter(line => ["gateway", "tributos"].includes(line.categoryId)).reduce((acc, line) => acc + lineTotal(line), 0);
-  const custos = budget.filter(line => categoryOf(categories, line.categoryId)?.kind === "Custo").reduce((acc, line) => acc + lineTotal(line), 0);
-  const opex = budget.filter(line => categoryOf(categories, line.categoryId)?.group === "OPEX").reduce((acc, line) => acc + lineTotal(line), 0);
-  const receitaLiquida = receita - deducoes;
-  const lucroBruto = receitaLiquida - custos;
-  const ebitda = lucroBruto - opex;
-
-  return (
-    <main className="page">
-      <PageTitle title="Relatórios" subtitle="Fluxo de caixa, categorias, centros de custo/lucro, analítico e DRE." />
-      <div className="report-tabs">
-        {["Fluxo de Caixa / Competência", "Lançamentos por Categoria", "Centros de Custo/Lucro", "Receitas x Despesas", "Relatório Analítico", "DRE"].map(item => <button key={item} type="button">{item}</button>)}
-      </div>
-      <div className="metrics-row">
-        <Metric label="Margem bruta" value={pct((lucroBruto / receitaLiquida) * 100)} />
-        <Metric label="Margem EBITDA" value={pct((ebitda / receitaLiquida) * 100)} />
-        <Metric label="Margem líquida" value={pct((ebitda / receitaLiquida) * 100)} />
-        <Metric label="Resultado" value={money(ebitda)} positive />
-      </div>
-      <Panel title="DRE sintética" action="Forecast 2026">
-        <DataTable
-          columns={["Conta", "Valor", "% Receita líquida"]}
-          rows={[
-            ["Receita bruta", money(receita), pct((receita / receitaLiquida) * 100)],
-            ["(-) Deduções e tributos", money(-deducoes), pct((-deducoes / receitaLiquida) * 100)],
-            ["Receita líquida", money(receitaLiquida), "100,0%"],
-            ["(-) Custos", money(-custos), pct((-custos / receitaLiquida) * 100)],
-            ["Lucro bruto", money(lucroBruto), pct((lucroBruto / receitaLiquida) * 100)],
-            ["(-) OPEX", money(-opex), pct((-opex / receitaLiquida) * 100)],
-            ["EBITDA", money(ebitda), pct((ebitda / receitaLiquida) * 100)],
-            ["Lucro líquido", money(ebitda), pct((ebitda / receitaLiquida) * 100)],
-          ]}
-        />
-      </Panel>
-    </main>
-  );
-}
-
-function RegistryPage({ title, type, categories, setCategories, centers, setCenters, contacts }) {
-  if (type === "clients" || type === "suppliers") {
-    const rows = contacts[type === "clients" ? "clientes" : "fornecedores"].map((name, index) => [name, index % 2 ? "Ativo" : "Em implantação", "Sem pendências"]);
-    return <main className="page"><PageTitle title={title} subtitle="Cadastro usado nos lançamentos, cobranças e relatórios." /><Panel><DataTable columns={["Nome", "Status", "Observação"]} rows={rows} /></Panel></main>;
-  }
-
-  return (
-    <main className="page">
-      <PageTitle title="Configurações" subtitle="Categorias, contas, centros de custo/lucro, formas de pagamento, tags e documentos." />
-      <div className="settings-grid">
-        <Panel title="Categorias">
-          <DataTable
-            columns={["Código", "Nome", "Grupo", "Tipo"]}
-            rows={categories.map(category => [
-              category.code,
-              <input key={`${category.id}-name`} value={category.name} onChange={event => setCategories(prev => prev.map(item => item.id === category.id ? { ...item, name:event.target.value } : item))} />,
-              category.group,
-              category.kind,
-            ])}
-          />
-          <button className="btn add-line" onClick={() => setCategories(prev => [...prev, { id:`cat-${prev.length + 1}`, group:"OPEX", code:`9.${prev.length + 1}`, name:"Nova categoria", kind:"Despesa" }])} type="button"><Plus size={15} /> Nova categoria</button>
-        </Panel>
-        <Panel title="Centros de Custo/Lucro">
-          <DataTable
-            columns={["Centro", "Responsável"]}
-            rows={centers.map(center => [
-              <input key={`${center.id}-name`} value={center.name} onChange={event => setCenters(prev => prev.map(item => item.id === center.id ? { ...item, name:event.target.value } : item))} />,
-              center.manager,
-            ])}
-          />
-          <button className="btn add-line" onClick={() => setCenters(prev => [...prev, { id:`center-${prev.length + 1}`, name:"Novo centro", manager:"Responsável" }])} type="button"><Plus size={15} /> Novo centro</button>
-        </Panel>
-      </div>
-    </main>
-  );
-}
-
-function AdminPage({ companies, setCompanies, company, setCompany }) {
-  const toggleModule = (companyId, module) => {
-    setCompanies(prev => prev.map(item => {
-      if (item.id !== companyId) return item;
-      const modules = item.modules.includes(module) ? item.modules.filter(active => active !== module) : [...item.modules, module];
-      const updated = { ...item, modules };
-      if (company.id === item.id) setCompany(updated);
-      return updated;
-    }));
-  };
-
-  return (
-    <main className="page">
-      <PageTitle title="Administração 2AS" subtitle="Visão do criador do produto: empresas, planos, módulos liberados e integração com inteligência." />
-      <div className="admin-grid">
-        {companies.map(item => (
-          <Panel key={item.id} title={item.name} action={item.plan}>
-            <SummaryRows rows={[["CNPJ", item.document], ["Status", item.status], ["Regime", item.taxRegime]]} />
-            <div className="module-chips">
-              {["operacao", "orcamento", "relatorios", "cadastros", "integracao"].map(module => (
-                <button key={module} className={item.modules.includes(module) ? "chip on" : "chip"} onClick={() => toggleModule(item.id, module)} type="button">{module}</button>
-              ))}
-            </div>
-          </Panel>
-        ))}
-      </div>
-    </main>
-  );
-}
-
-function IntegrationPage() {
-  const base = ORCAMENTO_API_BASE;
-  const rows = [
-    ["GET", "/api/v1/companies", "empresas, plano e módulos"],
-    ["GET", "/api/v1/accounts", "contas, saldos e grupos"],
-    ["GET", "/api/v1/entries", "lançamentos revisados"],
-    ["GET", "/api/v1/budgets", "orçamento, realizado e diferença"],
-    ["GET", "/api/v1/dre", "DRE sintética e analítica"],
-    ["POST", "/api/v1/webhooks/intelligence-sync", "notificação de atualização"],
-  ];
-  return (
-    <main className="page">
-      <PageTitle title="Integração" subtitle="Contrato de API entre o módulo de orçamento 2AS e o Painel de Inteligência Financeira." />
-      {base && (
-        <Panel title="Ambiente configurado" action="VITE_ORCAMENTO_API_BASE">
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45 }}>Prefixo atual: <code>{base}</code></p>
-        </Panel>
-      )}
-      <Panel title="Endpoints MVP" action="Read API">
-        <div className="endpoint-grid">
-          {rows.map(([method, path, desc]) => (
-            <div className="endpoint" key={path}><b>{method}</b><code>{base ? `${base}${path}` : path}</code><span>{desc}</span></div>
-          ))}
-        </div>
-      </Panel>
-    </main>
-  );
-}
-
-function EntryModal({ type, onClose, onSave, categories, centers }) {
-  const mode = typeof type === "object" ? type.mode : "create";
-  const sourceEntry = typeof type === "object" ? type.entry : null;
-  const normalizedType = sourceEntry?.type || type;
-  const modalType = sourceEntry?.type || normalizedType;
-  const isTransfer = normalizedType === "transfer";
-  const [draft, setDraft] = useState({
-    status:sourceEntry?.status || (isTransfer ? "transferido" : modalType === "expense" ? "a_pagar" : "a_receber"),
-    account:sourceEntry?.account || (isTransfer ? "Itaú Principal -> C6 Reserva" : "Itaú Principal"),
-    date:sourceEntry?.date || "2026-05-31",
-    dueDate:sourceEntry?.dueDate || "2026-05-31",
-    competence:sourceEntry?.competence || "2026-05",
-    contact:sourceEntry?.contact || (isTransfer ? "Entre contas" : modalType === "expense" ? "Novo fornecedor" : "Novo cliente"),
-    categoryId:sourceEntry?.categoryId || (modalType === "expense" ? "tecnologia" : "receita"),
-    centerId:sourceEntry?.centerId || (modalType === "expense" ? "ops" : "receita"),
-    amount:Math.abs(sourceEntry?.amount || 1000),
-    payment:sourceEntry?.payment || "PIX",
-    document:sourceEntry?.document || "",
-    recurrence:sourceEntry?.recurrence || "Único",
-    installments:sourceEntry?.installments || "1/1",
-    origin:sourceEntry?.origin || "Manual",
-    notes:sourceEntry?.notes || "",
-    attachments:sourceEntry?.attachments || 0,
-    reconciled:sourceEntry?.reconciled || false,
-    reviewed:sourceEntry?.reviewed || false,
-  });
-
-  const title = mode === "receipt"
-    ? "Recibo do lançamento"
-    : mode === "settle"
-      ? sourceEntry?.type === "gain" ? "Receber lançamento" : sourceEntry?.type === "transfer" ? "Transferir lançamento" : "Pagar lançamento"
-      : mode === "edit"
-        ? "Editar lançamento"
-        : isTransfer ? "Registrar transferência" : modalType === "expense" ? "Registrar gasto" : "Registrar ganho";
-  const statusOptions = isTransfer ? ["transferido"] : modalType === "expense" ? ["pago", "a_pagar", "aprovar"] : ["recebido", "a_receber"];
-  const settledStatus = modalType === "gain" ? "recebido" : modalType === "transfer" ? "transferido" : "pago";
-
-  const save = () => {
-    const sign = modalType === "expense" ? -1 : 1;
-    onSave({
-      id:sourceEntry?.id || `e-${Date.now()}`,
-      type:isTransfer ? "transfer" : modalType === "expense" ? "expense" : "gain",
-      ...draft,
-      status:mode === "settle" ? settledStatus : draft.status,
-      amount:isTransfer ? Number(draft.amount) : sign * Math.abs(Number(draft.amount) || 0),
-      tags:sourceEntry?.tags || [],
-      attachments:draft.attachments,
-      reconciled:mode === "settle" ? true : draft.reconciled,
-      reviewed:mode === "settle" ? true : draft.reviewed,
-      origin:mode === "settle" && draft.origin === "Manual" ? "Baixado manualmente" : draft.origin,
-      allocation:[{ categoryId:draft.categoryId, centerId:draft.centerId, percent:100, amount:Math.abs(Number(draft.amount) || 0) }],
-    });
-  };
-
-  const readOnly = mode === "receipt";
-
-  return (
-    <div className="modal-backdrop">
-      <section className={`modal ${mode === "receipt" ? "receipt-modal" : ""}`}>
-        <div className="modal-head">
-          <div>
-            <h2>{title}</h2>
-            {sourceEntry && <p>{statusLabel[sourceEntry.status]} · {sourceEntry.document} · {sourceEntry.recurrence}</p>}
-          </div>
-          <button className="link-btn" onClick={onClose} type="button">Voltar sem salvar</button>
-        </div>
-        {mode === "receipt" && (
-          <div className="receipt-sheet">
-            <div><span>Descrição</span><strong>{draft.contact}</strong></div>
-            <div><span>Valor</span><strong>{money(modalType === "expense" ? -draft.amount : draft.amount)}</strong></div>
-            <div><span>Conta</span><strong>{draft.account}</strong></div>
-            <div><span>Baixa</span><strong>{draft.dueDate}</strong></div>
-            <div><span>Categoria</span><strong>{categories.find(category => category.id === draft.categoryId)?.name}</strong></div>
-            <div><span>Centro</span><strong>{centers.find(center => center.id === draft.centerId)?.name}</strong></div>
-          </div>
-        )}
-        <div className="modal-tabs">
-          <button className="active" type="button">{mode === "settle" ? "Baixa" : "Dados principais"}</button>
-          <button type="button"><SplitSquareHorizontal size={14} /> Rateio</button>
-          <button type="button"><Repeat2 size={14} /> Recorrência</button>
-          <button type="button"><CalendarDays size={14} /> Histórico</button>
-        </div>
-        <div className="modal-grid">
-          <label>Status<select disabled={readOnly || mode === "settle"} value={mode === "settle" ? settledStatus : draft.status} onChange={event => setDraft(prev => ({ ...prev, status:event.target.value }))}>{statusOptions.map(status => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
-          <label>Na conta<input disabled={readOnly} value={draft.account} onChange={event => setDraft(prev => ({ ...prev, account:event.target.value }))} /></label>
-          <label>{mode === "settle" ? "Data da baixa" : "Vencimento"}<input disabled={readOnly} value={draft.dueDate} onChange={event => setDraft(prev => ({ ...prev, dueDate:event.target.value, date:event.target.value }))} /></label>
-          <label>Competência<input disabled={readOnly} value={draft.competence} onChange={event => setDraft(prev => ({ ...prev, competence:event.target.value }))} /></label>
-          <label>Descrição<input disabled={readOnly} value={draft.contact} onChange={event => setDraft(prev => ({ ...prev, contact:event.target.value }))} /></label>
-          <label>Valor<input disabled={readOnly} value={draft.amount} onChange={event => setDraft(prev => ({ ...prev, amount:event.target.value }))} /></label>
-          {!isTransfer && <label>Categoria<select disabled={readOnly} value={draft.categoryId} onChange={event => setDraft(prev => ({ ...prev, categoryId:event.target.value }))}>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
-          <label>Centro de custo/lucro<select disabled={readOnly} value={draft.centerId} onChange={event => setDraft(prev => ({ ...prev, centerId:event.target.value }))}>{centers.map(center => <option key={center.id} value={center.id}>{center.name}</option>)}</select></label>
-          <label>Forma de pagamento<input disabled={readOnly} value={draft.payment} onChange={event => setDraft(prev => ({ ...prev, payment:event.target.value }))} /></label>
-          <label>Número do documento<input disabled={readOnly} value={draft.document} onChange={event => setDraft(prev => ({ ...prev, document:event.target.value }))} /></label>
-          <label>Recorrência<select disabled={readOnly || mode === "settle"} value={draft.recurrence} onChange={event => setDraft(prev => ({ ...prev, recurrence:event.target.value }))}><option>Único</option><option>Mensal</option><option>Semanal</option><option>Anual</option></select></label>
-          <label>Parcelas<input disabled={readOnly || mode === "settle"} value={draft.installments} onChange={event => setDraft(prev => ({ ...prev, installments:event.target.value }))} /></label>
-        </div>
-        <div className="allocation-editor">
-          <div>
-            <strong>Rateio do lançamento</strong>
-            <span>Categoria e centro de custo/lucro podem ser divididos antes de alimentar relatórios.</span>
-          </div>
-          <div className="allocation-row editor">
-            <span>{categories.find(category => category.id === draft.categoryId)?.name || "Transferência"}</span>
-            <strong>{centers.find(center => center.id === draft.centerId)?.name}</strong>
-            <b>100%</b>
-            <em>{money(draft.amount)}</em>
-          </div>
-        </div>
-        <div className="modal-notes">
-          <label>Observações<textarea disabled={readOnly} value={draft.notes} onChange={event => setDraft(prev => ({ ...prev, notes:event.target.value }))} placeholder="Anotações internas, anexos e identificador externo entram aqui." /></label>
-        </div>
-        <div className="modal-audit">
-          <span>{draft.attachments} anexo(s)</span>
-          <span>{mode === "settle" ? "Será conciliado na baixa" : draft.reconciled ? "Conciliado" : "Conciliação pendente"}</span>
-          <span>{draft.reviewed ? "Revisado" : "Revisão pendente"}</span>
-        </div>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose} type="button">Cancelar</button>
-          {mode !== "receipt" && <button className="btn primary" onClick={save} type="button">{mode === "settle" ? title : "Salvar"}</button>}
-          {mode === "create" && <button className="btn primary subtle" onClick={save} type="button">Salvar e adicionar outra</button>}
-          {mode === "receipt" && <button className="btn primary" type="button">Imprimir recibo</button>}
-        </div>
-      </section>
+    <div className="metric">
+      <span>{label}</span>
+      <strong className={positive?"positive":""}>{value}</strong>
     </div>
   );
 }
 
-function PageTitle({ title, subtitle }) {
-  return <div className="page-title"><div><h1>{title}</h1><p>{subtitle}</p></div></div>;
-}
-
-function Panel({ title, action, children, wide = false }) {
-  return (
-    <section className={wide ? "panel wide" : "panel"}>
-      {(title || action) && <div className="panel-head"><h2>{title}</h2>{action && <span>{action}</span>}</div>}
-      <div className="panel-body">{children}</div>
-    </section>
-  );
-}
-
-function DataTable({ columns, rows }) {
-  return (
-    <div className="table-scroll">
-      <table className="data-table">
-        <thead><tr>{columns.map(column => <th key={column}>{column}</th>)}</tr></thead>
-        <tbody>{rows.map((row, rowIndex) => <tr key={`row-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`cell-${rowIndex}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function GroupedList({ rows }) {
-  return <div className="grouped-list">{rows.map((row, index) => <div className="list-row" key={`${row.name}-${index}`}><span>{row.group}</span><strong>{row.name}</strong><b className={row.negative ? "negative" : ""}>{row.value}</b></div>)}</div>;
-}
-
-function EntryMiniList({ entries, categories, action }) {
-  return <div className="entry-mini">{entries.map(entry => <div className="mini-row" key={entry.id}><span>{entry.date}</span><strong>{entry.contact}<small>{categoryOf(categories, entry.categoryId)?.name}</small></strong><b>{money(Math.abs(entry.amount))}</b><button type="button">{action}</button></div>)}</div>;
-}
-
-function SummaryRows({ rows }) {
-  return <div className="summary-rows">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>;
-}
-
-function Progress({ label, value, warn = false }) {
-  return <div className="progress-line"><div><span>{label}</span><b>{pct(value)}</b></div><em><i className={warn ? "warn" : ""} style={{ width:`${Math.min(value, 100)}%` }} /></em></div>;
-}
-
-function Metric({ label, value, positive = false }) {
-  return <div className="metric"><span>{label}</span><strong className={positive ? "positive" : ""}>{value}</strong></div>;
-}
-
-export default function App({ sessionEmail = null, onSignOut = null } = {}) {
-  const [companies, setCompanies] = useState(companiesSeed);
-  const [company, setCompany] = useState(companiesSeed[0]);
-  const [page, setPage] = useState("overview");
-  const [accounts] = useState(accountsSeed);
-  const [categories, setCategories] = useState(categoriesSeed);
-  const [centers, setCenters] = useState(centersSeed);
-  const [budget, setBudget] = useState(budgetSeed);
-  const [entries, setEntries] = useState(entriesSeed);
-  const [modal, setModal] = useState(null);
-
-  const activeModal = modal && typeof modal === "object"
-    ? { ...modal, entry:entries.find(entry => entry.id === modal.entryId) }
-    : modal;
-
-  const pageNode = useMemo(() => {
-    if (page === "overview") return <Dashboard accounts={accounts} entries={entries} budget={budget} categories={categories} centers={centers} />;
-    if (page === "entries") return <EntriesPage entries={entries} setEntries={setEntries} categories={categories} centers={centers} setModal={setModal} />;
-    if (page === "budget") return <BudgetPage budget={budget} setBudget={setBudget} categories={categories} centers={centers} company={company} />;
-    if (page === "reports") return <ReportsPage budget={budget} categories={categories} />;
-    if (page === "clients") return <RegistryPage title="Clientes" type="clients" contacts={contactsSeed} />;
-    if (page === "suppliers") return <RegistryPage title="Fornecedores" type="suppliers" contacts={contactsSeed} />;
-    if (page === "settings") return <RegistryPage type="settings" categories={categories} setCategories={setCategories} centers={centers} setCenters={setCenters} contacts={contactsSeed} />;
-    if (page === "admin") return <AdminPage companies={companies} setCompanies={setCompanies} company={company} setCompany={setCompany} />;
-    if (page === "integration") return <IntegrationPage />;
-    return null;
-  }, [accounts, budget, categories, centers, companies, company, entries, page]);
-
-  const saveEntry = entry => {
-    setEntries(prev => prev.some(item => item.id === entry.id)
-      ? prev.map(item => item.id === entry.id ? entry : item)
-      : [entry, ...prev]);
-    setModal(null);
-  };
+// ─── App ──────────────────────────────────────────────────────────────────────
+export default function App({ sessionEmail=null, onSignOut=null }={}) {
+  const [versions] = useState(SEED_VERSIONS);
+  const [version, setVersion] = useState(SEED_VERSIONS[0]);
+  const [areas,   setAreas]   = useState(SEED_AREAS);
+  const [groups,  setGroups]  = useState(SEED_GROUPS);
+  const [lines,   setLines]   = useState(SEED_LINES);
+  const [actuals, setActuals] = useState(SEED_ACTUALS);
+  const [view,    setView]    = useState("budget");
 
   return (
     <div className="granatum-shell">
-      <Header company={company} companies={companies} setCompany={setCompany} page={page} setPage={setPage} setModal={setModal} sessionEmail={sessionEmail} onSignOut={onSignOut} />
-      {pageNode}
-      <button className="integration-pill" onClick={() => setPage("integration")} type="button"><Tags size={15} /> API para Painel de Inteligência</button>
-      {activeModal && <EntryModal type={activeModal} onClose={() => setModal(null)} onSave={saveEntry} categories={categories} centers={centers} />}
+      <Header version={version} versions={versions} setVersion={setVersion} view={view} setView={setView} sessionEmail={sessionEmail} onSignOut={onSignOut} />
+      {view==="budget"     && <BudgetPage     version={version} areas={areas} setAreas={setAreas} groups={groups} setGroups={setGroups} lines={lines} setLines={setLines} />}
+      {view==="realized"   && <RealizedPage   version={version} areas={areas} groups={groups} lines={lines} actuals={actuals} setActuals={setActuals} />}
+      {view==="comparison" && <ComparisonPage version={version} areas={areas} groups={groups} lines={lines} actuals={actuals} />}
+      {view==="summary"    && <SummaryPage    version={version} areas={areas} groups={groups} lines={lines} actuals={actuals} />}
     </div>
   );
 }
