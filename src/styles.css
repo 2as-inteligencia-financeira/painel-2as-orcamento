@@ -1315,12 +1315,22 @@ input:disabled {
 
 /* Each row = label-col (sticky) + scroll-area */
 .bt-head,
-.bt-area-header,
 .bt-group-header,
 .bt-line {
   display: flex;
   align-items: stretch;
   min-height: 36px;
+}
+
+/* Área: altura confortável (evita linha “espremida” no comparativo) */
+.bt-area-header {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  padding-block: 8px;
+  flex-shrink: 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
 }
 
 .bt-label-col {
@@ -1339,7 +1349,7 @@ input:disabled {
 
 .bt-scroll-area {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   overflow-x: visible;
   flex: 1;
   min-width: 0;
@@ -1348,9 +1358,9 @@ input:disabled {
 .bt-scroll-area::-webkit-scrollbar { height: 3px; }
 .bt-scroll-area::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
-/* Column widths — valores numéricos em 8px */
-.bt-total-col  { flex: 0 0 148px; min-width: 148px; padding: 0 10px; text-align: right; font-size: 8px; }
-.bt-month-col  { flex: 0 0 112px; min-width: 112px; padding: 0 4px; text-align: right; font-size: 8px; }
+/* Column widths — valores em 9px (áreas sobrescrevem para 10px) */
+.bt-total-col  { flex: 0 0 148px; min-width: 148px; padding: 0 10px; text-align: right; font-size: 9px; display: flex; align-items: center; justify-content: flex-end; }
+.bt-month-col  { flex: 0 0 112px; min-width: 112px; padding: 0 4px; text-align: right; font-size: 9px; display: flex; align-items: center; justify-content: flex-end; }
 .bt-actions-col{ flex: 0 0 56px;  min-width: 56px;  display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 6px; }
 
 /* Sticky header row */
@@ -1360,14 +1370,16 @@ input:disabled {
   z-index: 10;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-  min-height: 32px;
+  min-height: 40px;
+  padding-block: 4px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 .bt-head .bt-label-col {
   background: var(--surface);
   font-family: "DM Mono", monospace;
   font-size: 9px;
-  font-weight: 400;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .14em;
   color: var(--muted);
@@ -1377,10 +1389,10 @@ input:disabled {
 .bt-head .bt-total-col {
   font-family: "DM Mono", monospace;
   font-size: 9px;
-  font-weight: 400;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .14em;
-  color: var(--muted);
+  letter-spacing: .1em;
+  color: var(--ink);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1393,9 +1405,11 @@ input:disabled {
 .bt-section-header {
   display: flex;
   align-items: stretch;
-  min-height: 36px;
+  min-height: 40px;
+  padding-block: 4px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .bt-section-header .bt-label-col {
@@ -1410,7 +1424,7 @@ input:disabled {
 
 .bt-section-header .bt-month-col,
 .bt-section-header .bt-total-col {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: 0;
@@ -1419,7 +1433,7 @@ input:disabled {
 
 .bt-section-header em {
   font-style: normal;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   color: var(--ink);
   letter-spacing: 0;
@@ -1496,21 +1510,31 @@ input:disabled {
 .bt-area-header strong {
   color: var(--ink);
   font-weight: 700;
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 /* Area */
 .bt-area { border-bottom: 1px solid var(--line); }
 .bt-area:last-child { border-bottom: 0; }
 
-.bt-area-header {
-  background: var(--card);
-  border-bottom: 1px solid var(--line);
-  min-height: 42px;
+.bt-area-header .bt-label-col {
+  background: transparent;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
 }
 
-.bt-area-header .bt-label-col { background: transparent; }
-.bt-area-header .bt-month-col { font-size: 8px; color: var(--muted); }
-.bt-area-header .bt-total-col { font-weight: 700; font-size: 8px; color: var(--ink); }
+.bt-area-header .bt-month-col,
+.bt-area-header .bt-total-col {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bt-area-header .bt-month-col.dim {
+  color: var(--muted);
+}
 
 /* Group */
 .bt-group { border-bottom: 1px solid var(--line); }
@@ -1526,8 +1550,8 @@ input:disabled {
   padding-left: 24px;
 }
 
-.bt-group-header .bt-month-col { font-size: 8px; color: var(--muted); }
-.bt-group-header .bt-total-col { font-size: 8px; color: var(--muted); }
+.bt-group-header .bt-month-col { font-size: 9px; color: var(--muted); }
+.bt-group-header .bt-total-col { font-size: 9px; color: var(--muted); }
 
 /* Line */
 .bt-line {
@@ -1572,17 +1596,17 @@ input:disabled {
   min-width: 0;
   border: 1px solid transparent;
   background: transparent;
-  min-height: 26px;
+  min-height: 28px;
   padding: 0 5px;
-  font-size: 12px;
+  font-size: 9px;
 }
 
 .bt-name-input:focus { border-color: var(--amber); background: rgba(245,158,11,.04); outline: none; }
 
-.area-name  { font-weight: 700; font-size: 13px; letter-spacing: -0.01em; color: var(--ink); }
-.group-name { font-weight: 400; font-size: 11px; color: var(--muted); letter-spacing: .01em; }
-.line-name  { font-size: 12px; font-weight: 400; }
-.line-label { font-size: 12px; font-weight: 400; color: var(--ink); }
+.area-name  { font-weight: 700; font-size: 10px; letter-spacing: -0.01em; color: var(--ink); }
+.group-name { font-weight: 400; font-size: 9px; color: var(--muted); letter-spacing: .01em; }
+.line-name  { font-size: 9px; font-weight: 400; }
+.line-label { font-size: 9px; font-weight: 400; color: var(--ink); }
 
 .bt-mgr-input {
   flex: 0 0 90px;
@@ -1590,7 +1614,7 @@ input:disabled {
   background: transparent;
   min-height: 22px;
   padding: 0 5px;
-  font-size: 10px;
+  font-size: 9px;
   color: var(--dim);
 }
 
@@ -1599,11 +1623,11 @@ input:disabled {
 /* Monthly value inputs */
 .bt-val-input {
   width: 108px;
-  min-height: 26px;
+  min-height: 28px;
   border: 1px solid transparent;
   background: transparent;
   text-align: right;
-  font-size: 8px;
+  font-size: 9px;
   padding: 0 6px;
   color: var(--ink);
 }
@@ -1731,15 +1755,17 @@ input.bt-name-input:-webkit-autofill:focus {
   display: grid;
   grid-template-columns: 1fr 1fr 52px;
   align-items: center;
-  padding: 0 8px;
+  align-self: stretch;
+  min-height: 40px;
+  padding: 6px 8px;
   gap: 4px;
   border-right: 1px solid var(--line);
-  font-size: 8px;
+  font-size: 9px;
   color: var(--ink);
 }
 
 /* Primeira coluna (anual) é mais larga */
-.bt-cmp-pair:first-child {
+.bt-scroll-area > .bt-cmp-pair:first-child {
   flex: 0 0 260px;
   min-width: 260px;
   grid-template-columns: 1fr 1fr 60px;
@@ -1747,11 +1773,38 @@ input.bt-name-input:-webkit-autofill:focus {
 
 .bt-cmp-pair.hdr {
   font-family: "DM Mono", monospace;
-  font-size: 8px;
-  font-weight: 400;
-  color: var(--dim);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .1em;
+  letter-spacing: .08em;
+}
+
+/* Comparativo: destaque forte nos blocos de mês (JAN, FEV, …) no cabeçalho */
+.bt-wrapper.comparison .bt-head .bt-scroll-area > .bt-cmp-pair.hdr:first-child {
+  background: rgba(245, 158, 11, 0.1);
+  border-right: 1px solid rgba(217, 119, 6, 0.25);
+  color: #78350f;
+}
+
+.bt-wrapper.comparison .bt-head .bt-scroll-area > .bt-cmp-pair.hdr:nth-child(n + 2) {
+  background: linear-gradient(180deg, rgba(254, 243, 199, 0.95) 0%, rgba(245, 158, 11, 0.22) 100%);
+  border-bottom: 2px solid rgba(217, 119, 6, 0.55);
+  border-right: 1px solid rgba(217, 119, 6, 0.2);
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #78350f;
+}
+
+.bt-wrapper.comparison .bt-head .bt-scroll-area > .bt-cmp-pair.hdr:nth-child(n + 2) span {
+  color: #78350f;
+}
+
+/* Linha de área no comparativo: mesma tipografia 10px que o restante das áreas */
+.bt-wrapper.comparison .bt-area-header .bt-cmp-pair {
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .bt-cmp-pair span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
