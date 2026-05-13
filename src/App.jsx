@@ -344,6 +344,41 @@ const SEED_ACTUALS = {
   l164:[4326,0,0,0,0,0,0,0,0,0,0,0], l165:[2277,0,0,0,0,0,0,0,0,0,0,0],
 };
 
+/** Duplica árvore (áreas → grupos → linhas) para outra versão — evita lista vazia ao trocar de plano. */
+function cloneBudgetSlice(areas, groups, lines, fromVid, toVid) {
+  const srcAreas = areas.filter((a) => a.vId === fromVid);
+  const oldToNewArea = new Map();
+  const newAreas = srcAreas.map((a) => {
+    const id = uid();
+    oldToNewArea.set(a.id, id);
+    return { ...a, id, vId: toVid };
+  });
+  const srcGroups = groups.filter((g) => oldToNewArea.has(g.aId));
+  const oldToNewGroup = new Map();
+  const newGroups = srcGroups.map((g) => {
+    const id = uid();
+    oldToNewGroup.set(g.id, id);
+    return { ...g, id, aId: oldToNewArea.get(g.aId) };
+  });
+  const newLines = lines
+    .filter(
+      (l) =>
+        (l.pt === "a" && oldToNewArea.has(l.pid)) ||
+        (l.pt === "g" && oldToNewGroup.has(l.pid))
+    )
+    .map((l) => ({
+      ...l,
+      id: uid(),
+      pid: l.pt === "a" ? oldToNewArea.get(l.pid) : oldToNewGroup.get(l.pid),
+    }));
+  return { areas: newAreas, groups: newGroups, lines: newLines };
+}
+
+const V2_CLONE = cloneBudgetSlice(SEED_AREAS, SEED_GROUPS, SEED_LINES, "v1", "v2");
+const INIT_AREAS = [...SEED_AREAS, ...V2_CLONE.areas];
+const INIT_GROUPS = [...SEED_GROUPS, ...V2_CLONE.groups];
+const INIT_LINES = [...SEED_LINES, ...V2_CLONE.lines];
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 function Header({ version, versions, setVersion, view, setView, sessionEmail, onSignOut }) {
   return (
@@ -400,6 +435,7 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
         <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
       </div>
       <div className="bt-wrapper">
+        <div className="bt-h-scroll">
         {/* sticky header */}
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
@@ -413,7 +449,7 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
         {SECTIONS.map(sec=>{
           const secAreas = vAreas.filter(a=>a.sId===sec.id);
           return (
-            <div className="bt-section" key={sec.id}>
+            <div className="bt-section" key={sec.id} data-section-id={sec.id}>
               <div className="bt-section-header">
                 <div className="bt-label-col"><span>{sec.label}</span></div>
                 <div className="bt-scroll-area">
@@ -519,6 +555,7 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
             </div>
           );
         })}
+        </div>
       </div>
     </main>
   );
@@ -590,6 +627,7 @@ function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
         <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
       </div>
       <div className="bt-wrapper">
+        <div className="bt-h-scroll">
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
           <div className="bt-scroll-area">
@@ -602,7 +640,7 @@ function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
         {SECTIONS.map(sec=>{
           const secAreas = vAreas.filter(a=>a.sId===sec.id);
           return (
-            <div className="bt-section" key={sec.id}>
+            <div className="bt-section" key={sec.id} data-section-id={sec.id}>
               <div className="bt-section-header">
                 <div className="bt-label-col"><span>{sec.label}</span></div>
                 <div className="bt-scroll-area">
@@ -713,6 +751,7 @@ function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
             </div>
           );
         })}
+        </div>
       </div>
     </main>
   );
@@ -737,6 +776,7 @@ function ComparisonPage({ version, areas, groups, lines, actuals }) {
         <div><h1>Orçado × Realizado</h1><p>Comparativo acumulado até {MONTHS[REALIZED_THRU-1]} · {version.year} · {version.name}</p></div>
       </div>
       <div className="bt-wrapper comparison">
+        <div className="bt-h-scroll">
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
           <div className="bt-scroll-area">
@@ -755,7 +795,7 @@ function ComparisonPage({ version, areas, groups, lines, actuals }) {
             return [...gs,...dl];
           });
           return (
-            <div className="bt-section" key={sec.id}>
+            <div className="bt-section" key={sec.id} data-section-id={sec.id}>
               <div className="bt-section-header">
                 <div className="bt-label-col"><span>{sec.label}</span></div>
                 <div className="bt-scroll-area">
@@ -899,6 +939,7 @@ function ComparisonPage({ version, areas, groups, lines, actuals }) {
             </div>
           );
         })}
+        </div>
       </div>
     </main>
   );
@@ -943,7 +984,7 @@ function SummaryPage({ version, areas, groups, lines, actuals }) {
         <KPI label="Resultado realizado" value={fmt(recReal-grandReal)} positive />
       </div>
       {rows.map(({sec,areaRows,totOrc,totReal})=>(
-        <div className="summary-section" key={sec.id}>
+        <div className="summary-section" key={sec.id} data-section-id={sec.id}>
           <div className="summary-section-header">
             <span>{sec.label}</span>
             <span>{fmt(totOrc)}</span>
@@ -985,9 +1026,9 @@ function KPI({ label, value, positive=false }) {
 export default function App({ sessionEmail=null, onSignOut=null }={}) {
   const [versions] = useState(SEED_VERSIONS);
   const [version, setVersion] = useState(SEED_VERSIONS[0]);
-  const [areas,   setAreas]   = useState(SEED_AREAS);
-  const [groups,  setGroups]  = useState(SEED_GROUPS);
-  const [lines,   setLines]   = useState(SEED_LINES);
+  const [areas,   setAreas]   = useState(INIT_AREAS);
+  const [groups,  setGroups]  = useState(INIT_GROUPS);
+  const [lines,   setLines]   = useState(INIT_LINES);
   const [actuals, setActuals] = useState(SEED_ACTUALS);
   const [view,    setView]    = useState("budget");
 

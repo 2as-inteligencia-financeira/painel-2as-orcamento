@@ -1304,7 +1304,13 @@ input:disabled {
 
 .bt-wrapper {
   background: var(--card);
-  overflow: hidden;
+}
+
+/* Scroll horizontal único para toda a grade (label permanece sticky à esquerda). */
+.bt-h-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Each row = label-col (sticky) + scroll-area */
@@ -1334,16 +1340,17 @@ input:disabled {
 .bt-scroll-area {
   display: flex;
   align-items: center;
-  overflow-x: auto;
+  overflow-x: visible;
   flex: 1;
+  min-width: 0;
 }
 
 .bt-scroll-area::-webkit-scrollbar { height: 3px; }
 .bt-scroll-area::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
-/* Column widths */
-.bt-total-col  { flex: 0 0 148px; min-width: 148px; padding: 0 10px; text-align: right; font-size: 12px; }
-.bt-month-col  { flex: 0 0 112px; min-width: 112px; padding: 0 4px; text-align: right; font-size: 12px; }
+/* Column widths — valores numéricos em 8px */
+.bt-total-col  { flex: 0 0 148px; min-width: 148px; padding: 0 10px; text-align: right; font-size: 8px; }
+.bt-month-col  { flex: 0 0 112px; min-width: 112px; padding: 0 4px; text-align: right; font-size: 8px; }
 .bt-actions-col{ flex: 0 0 56px;  min-width: 56px;  display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 6px; }
 
 /* Sticky header row */
@@ -1403,20 +1410,92 @@ input:disabled {
 
 .bt-section-header .bt-month-col,
 .bt-section-header .bt-total-col {
-  font-size: 11px;
+  font-size: 8px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--ink);
   letter-spacing: 0;
   text-transform: none;
 }
 
 .bt-section-header em {
   font-style: normal;
-  font-size: 12px;
+  font-size: 8px;
   font-weight: 700;
   color: var(--ink);
   letter-spacing: 0;
   text-transform: none;
+}
+
+/* Cabeçalhos de seção / área / grupo — fundo âmbar com variação por bloco */
+.bt-section[data-section-id="receitas"] .bt-section-header {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.38) 0%, rgba(254, 243, 199, 0.82) 52%, #fffefb 100%);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.28);
+}
+.bt-section[data-section-id="receitas"] .bt-section-header .bt-label-col {
+  background: transparent;
+}
+.bt-section[data-section-id="receitas"] .bt-section-header .bt-label-col span {
+  color: #92400e;
+  font-weight: 800;
+}
+
+.bt-section[data-section-id="despesas_fixas"] .bt-section-header {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.24) 0%, rgba(255, 250, 235, 0.92) 58%, #fffefb 100%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+.bt-section[data-section-id="despesas_fixas"] .bt-section-header .bt-label-col {
+  background: transparent;
+}
+.bt-section[data-section-id="despesas_fixas"] .bt-section-header .bt-label-col span {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.bt-section[data-section-id="despesas_variaveis"] .bt-section-header {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.22) 0%, rgba(254, 243, 199, 0.5) 65%, #fafaf7 100%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.18);
+}
+.bt-section[data-section-id="despesas_variaveis"] .bt-section-header .bt-label-col {
+  background: transparent;
+}
+.bt-section[data-section-id="despesas_variaveis"] .bt-section-header .bt-label-col span {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.bt-section[data-section-id="receitas"] .bt-area-header {
+  background: linear-gradient(90deg, rgba(254, 243, 199, 0.72) 0%, #ffffff 56%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.22);
+}
+.bt-section[data-section-id="despesas_fixas"] .bt-area-header {
+  background: linear-gradient(90deg, rgba(254, 243, 199, 0.45) 0%, #ffffff 52%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.16);
+}
+.bt-section[data-section-id="despesas_variaveis"] .bt-area-header {
+  background: linear-gradient(90deg, rgba(255, 251, 235, 0.95) 0%, #ffffff 48%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.14);
+}
+
+.bt-section[data-section-id="receitas"] .bt-group-header {
+  background: linear-gradient(90deg, rgba(255, 251, 235, 0.98) 0%, rgba(250, 250, 247, 0.96) 100%);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.1);
+}
+.bt-section[data-section-id="despesas_fixas"] .bt-group-header {
+  background: linear-gradient(90deg, rgba(254, 246, 225, 0.92) 0%, #fafaf7 100%);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.12);
+}
+.bt-section[data-section-id="despesas_variaveis"] .bt-group-header {
+  background: linear-gradient(90deg, rgba(254, 249, 231, 0.88) 0%, #fafaf7 100%);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.1);
+}
+
+.bt-section[data-section-id] .bt-group-header .bt-label-col {
+  background: transparent;
+}
+
+.bt-area-header strong {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 /* Area */
@@ -1429,9 +1508,9 @@ input:disabled {
   min-height: 42px;
 }
 
-.bt-area-header .bt-label-col { background: var(--card); }
-.bt-area-header .bt-month-col { font-size: 11px; color: var(--muted); }
-.bt-area-header .bt-total-col { font-weight: 700; font-size: 12px; }
+.bt-area-header .bt-label-col { background: transparent; }
+.bt-area-header .bt-month-col { font-size: 8px; color: var(--muted); }
+.bt-area-header .bt-total-col { font-weight: 700; font-size: 8px; color: var(--ink); }
 
 /* Group */
 .bt-group { border-bottom: 1px solid var(--line); }
@@ -1447,8 +1526,8 @@ input:disabled {
   padding-left: 24px;
 }
 
-.bt-group-header .bt-month-col { font-size: 11px; color: var(--dim); }
-.bt-group-header .bt-total-col { font-size: 11px; color: var(--dim); }
+.bt-group-header .bt-month-col { font-size: 8px; color: var(--muted); }
+.bt-group-header .bt-total-col { font-size: 8px; color: var(--muted); }
 
 /* Line */
 .bt-line {
@@ -1524,9 +1603,23 @@ input:disabled {
   border: 1px solid transparent;
   background: transparent;
   text-align: right;
-  font-size: 12px;
+  font-size: 8px;
   padding: 0 6px;
   color: var(--ink);
+}
+
+input.bt-name-input,
+input.bt-val-input,
+input.bt-mgr-input {
+  -webkit-text-fill-color: var(--ink);
+}
+
+input.bt-name-input:-webkit-autofill,
+input.bt-name-input:-webkit-autofill:hover,
+input.bt-name-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  transition: background-color 5000s ease-in-out 0s;
+  box-shadow: inset 0 0 0 40px rgba(255, 255, 255, 0.6);
 }
 
 .bt-val-input:focus { border-color: var(--amber); background: rgba(245,158,11,.04); outline: none; }
@@ -1641,7 +1734,8 @@ input:disabled {
   padding: 0 8px;
   gap: 4px;
   border-right: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 8px;
+  color: var(--ink);
 }
 
 /* Primeira coluna (anual) é mais larga */
@@ -1686,8 +1780,39 @@ input:disabled {
   font-size: 9px;
   font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: .18em;
+  letter-spacing: 0.18em;
   color: var(--dim);
+}
+
+.summary-section[data-section-id="receitas"] .summary-section-header {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.32) 0%, rgba(254, 243, 199, 0.75) 55%, #fffefb 100%);
+}
+.summary-section[data-section-id="receitas"] .summary-section-header > span:first-child {
+  color: #92400e;
+  font-weight: 800;
+}
+
+.summary-section[data-section-id="despesas_fixas"] .summary-section-header {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.22) 0%, rgba(255, 250, 235, 0.88) 60%, #fffefb 100%);
+}
+.summary-section[data-section-id="despesas_fixas"] .summary-section-header > span:first-child {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.summary-section[data-section-id="despesas_variaveis"] .summary-section-header {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.2) 0%, rgba(254, 243, 199, 0.48) 65%, #fafaf7 100%);
+}
+.summary-section[data-section-id="despesas_variaveis"] .summary-section-header > span:first-child {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.summary-section[data-section-id] .summary-section-header span:nth-child(2),
+.summary-section[data-section-id] .summary-section-header span:nth-child(3) {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .summary-table {
@@ -1734,8 +1859,3 @@ input:disabled {
 }
 
 .adh-bar .fill.over { background: var(--red); }
-
-/* ─── TEST: sem bordas ────────────────────────────────────────────────────────── */
-:root { --line: transparent; --line-strong: transparent; }
-*, *::before, *::after { border-color: transparent !important; }
-.top-menu button.active { border-bottom: 2px solid var(--amber) !important; }
