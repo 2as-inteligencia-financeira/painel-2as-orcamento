@@ -1436,8 +1436,31 @@ input:disabled {
 .bt-scroll-area::-webkit-scrollbar { height: 3px; }
 .bt-scroll-area::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
-/* Column widths — fonte e colunas crescem com --bt-fs (0–2) */
-.bt-total-col  { flex: 0 0 calc(148px + var(--bt-fs) * 12px); min-width: calc(148px + var(--bt-fs) * 12px); padding: 0 10px; text-align: right; font-size: calc(9px + var(--bt-fs) * 1px); display: flex; align-items: center; justify-content: flex-end; }
+/* Total anual: valores em moeda (fmt) — coluna mais larga e sem quebra no meio */
+.bt-total-col  {
+  flex: 0 0 calc(200px + var(--bt-fs) * 26px);
+  min-width: calc(200px + var(--bt-fs) * 26px);
+  padding: 0 8px 0 10px;
+  text-align: right;
+  font-size: calc(9px + var(--bt-fs) * 1px);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  white-space: nowrap;
+  overflow: visible;
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-head .bt-total-col {
+  white-space: normal;
+  line-height: 1.2;
+  hyphens: none;
+}
+
+.bt-total-col em {
+  font-style: normal;
+}
+
 .bt-month-col  { flex: 0 0 calc(112px + var(--bt-fs) * 8px); min-width: calc(112px + var(--bt-fs) * 8px); padding: 0 4px; text-align: right; font-size: calc(9px + var(--bt-fs) * 1px); display: flex; align-items: center; justify-content: flex-end; }
 .bt-actions-col{ flex: 0 0 56px;  min-width: 56px;  display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 6px; }
 
