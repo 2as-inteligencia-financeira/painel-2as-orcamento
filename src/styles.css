@@ -5,8 +5,8 @@
   --paper: #f0f0ea;
   --surface: #fafaf7;
   --card: #ffffff;
-  --line: #e2e2dc;
-  --line-strong: #d0d0ca;
+  --line: #ebebE4;
+  --line-strong: #e2e2dc;
   --muted: #606060;
   --dim: #999999;
   --amber: #f59e0b;
@@ -354,7 +354,7 @@ input:disabled {
 .panel-total {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
 }
@@ -1304,7 +1304,6 @@ input:disabled {
 
 .bt-wrapper {
   background: var(--card);
-  border: 1px solid var(--line);
   overflow: hidden;
 }
 
