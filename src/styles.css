@@ -1734,3 +1734,8 @@ input:disabled {
 }
 
 .adh-bar .fill.over { background: var(--red); }
+
+/* ─── TEST: sem bordas ────────────────────────────────────────────────────────── */
+:root { --line: transparent; --line-strong: transparent; }
+*, *::before, *::after { border-color: transparent !important; }
+.top-menu button.active { border-bottom: 2px solid var(--amber) !important; }
