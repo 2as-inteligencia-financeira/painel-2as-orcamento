@@ -1414,15 +1414,16 @@ input:disabled {
 .bt-label-col {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: 8;
   flex: 0 0 calc(290px + var(--bt-fs) * 14px);
   min-width: calc(290px + var(--bt-fs) * 14px);
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 12px;
-  background: inherit;
+  background: var(--card);
   border-right: 1px solid var(--line);
+  box-shadow: 6px 0 14px -4px rgba(0, 0, 0, 0.1);
 }
 
 .bt-scroll-area {
@@ -1431,6 +1432,8 @@ input:disabled {
   overflow-x: visible;
   flex: 1;
   min-width: 0;
+  position: relative;
+  z-index: 0;
 }
 
 .bt-scroll-area::-webkit-scrollbar { height: 3px; }
@@ -1477,6 +1480,7 @@ input:disabled {
 }
 
 .bt-head .bt-label-col {
+  z-index: 9;
   background: var(--surface);
   font-family: "DM Mono", monospace;
   font-size: calc(9px + var(--bt-fs) * 1px);
@@ -1547,7 +1551,7 @@ input:disabled {
   border-bottom: 1px solid rgba(217, 119, 6, 0.28);
 }
 .bt-section[data-section-id="receitas"] .bt-section-header .bt-label-col {
-  background: transparent;
+  background: #fff4e6;
 }
 .bt-section[data-section-id="receitas"] .bt-section-header .bt-label-col span {
   color: #92400e;
@@ -1559,7 +1563,7 @@ input:disabled {
   border-bottom: 1px solid rgba(245, 158, 11, 0.2);
 }
 .bt-section[data-section-id="despesas_fixas"] .bt-section-header .bt-label-col {
-  background: transparent;
+  background: #fff8ee;
 }
 .bt-section[data-section-id="despesas_fixas"] .bt-section-header .bt-label-col span {
   color: #b45309;
@@ -1571,7 +1575,7 @@ input:disabled {
   border-bottom: 1px solid rgba(245, 158, 11, 0.18);
 }
 .bt-section[data-section-id="despesas_variaveis"] .bt-section-header .bt-label-col {
-  background: transparent;
+  background: #fafaf7;
 }
 .bt-section[data-section-id="despesas_variaveis"] .bt-section-header .bt-label-col span {
   color: #b45309;
@@ -1605,7 +1609,7 @@ input:disabled {
 }
 
 .bt-section[data-section-id] .bt-group-header .bt-label-col {
-  background: transparent;
+  background: var(--surface);
 }
 
 .bt-area-header strong {
@@ -1620,7 +1624,7 @@ input:disabled {
 .bt-area:last-child { border-bottom: 0; }
 
 .bt-area-header .bt-label-col {
-  background: transparent;
+  background: #ffffff;
   align-self: stretch;
   display: flex;
   align-items: center;
