@@ -1313,6 +1313,22 @@ input:disabled {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Viewport: rolagem vertical da grade com cabeçalho “Área / mês” fixo no topo */
+.bt-scroll-viewport {
+  max-height: calc(100vh - 60px - 200px);
+  min-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.bt-scroll-viewport .bt-head {
+  top: 0;
+  z-index: 15;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
 /* Each row = label-col (sticky) + scroll-area */
 .bt-head,
 .bt-group-header,
@@ -1620,15 +1636,87 @@ input:disabled {
 
 .bt-mgr-input:focus { border-color: var(--line-strong); background: var(--card); outline: none; }
 
+.bt-month-col:has(.bt-val-cell.editing) {
+  flex: 0 0 132px;
+  min-width: 132px;
+}
+
 /* Monthly value inputs */
+.bt-val-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+  min-height: 28px;
+}
+
+.bt-val-cell .bt-val-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.bt-val-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.bt-val-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.bt-val-action.confirm {
+  border-color: rgba(22, 163, 74, 0.45);
+  color: var(--green);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.bt-val-action.confirm:hover {
+  background: rgba(22, 163, 74, 0.16);
+  color: #14532d;
+}
+
+.bt-val-action.cancel {
+  border-color: rgba(220, 38, 38, 0.35);
+  color: var(--red);
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.bt-val-action.cancel:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #991b1b;
+}
+
+.bt-val-input:read-only {
+  cursor: pointer;
+}
+
+.bt-val-input:not(:read-only) {
+  cursor: text;
+}
+
 .bt-val-input {
-  width: 108px;
   min-height: 28px;
   border: 1px solid transparent;
   background: transparent;
   text-align: right;
   font-size: 9px;
-  padding: 0 6px;
+  padding: 0 4px;
   color: var(--ink);
 }
 

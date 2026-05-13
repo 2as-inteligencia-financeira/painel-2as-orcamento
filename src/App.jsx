@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Download, Check, X } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -435,8 +435,9 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
         <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
       </div>
       <div className="bt-wrapper">
+        <div className="bt-scroll-viewport">
         <div className="bt-h-scroll">
-        {/* sticky header */}
+        {/* sticky header (fixo no topo do viewport ao rolar a grade) */}
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
           <div className="bt-scroll-area">
@@ -556,6 +557,7 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
           );
         })}
         </div>
+        </div>
       </div>
     </main>
   );
@@ -563,17 +565,77 @@ function BudgetPage({ version, areas, setAreas, groups, setGroups, lines, setLin
 
 function ValInput({ value, onChange }) {
   const [editing, setEditing] = useState(false);
-  const [raw, setRaw] = useState(String(value || ""));
-  useEffect(() => { if (!editing) setRaw(String(value || "")); }, [value, editing]);
+  const [raw, setRaw] = useState(String(value ?? ""));
+  const cellRef = useRef(null);
+
+  useEffect(() => {
+    if (!editing) setRaw(String(value ?? ""));
+  }, [value, editing]);
+
+  const commit = () => {
+    onChange(raw);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setRaw(String(value ?? ""));
+    setEditing(false);
+  };
+
+  const onBlurInput = () => {
+    window.setTimeout(() => {
+      if (!cellRef.current?.contains(document.activeElement)) cancel();
+    }, 0);
+  };
+
   return (
-    <input
-      className="bt-val-input"
-      value={editing ? raw : (value ? fmtN(value) : "")}
-      placeholder="0"
-      onFocus={() => { setEditing(true); setRaw(String(value || "")); }}
-      onBlur={() => { setEditing(false); onChange(raw); }}
-      onChange={e => setRaw(e.target.value)}
-    />
+    <div className={`bt-val-cell${editing ? " editing" : ""}`} ref={cellRef}>
+      <input
+        className="bt-val-input"
+        readOnly={!editing}
+        value={editing ? raw : fmtN(value)}
+        placeholder="0"
+        onFocus={() => {
+          setEditing(true);
+          setRaw(String(value ?? ""));
+        }}
+        onBlur={onBlurInput}
+        onChange={(e) => setRaw(e.target.value)}
+        onKeyDown={(e) => {
+          if (!editing) return;
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+      />
+      {editing && (
+        <div className="bt-val-actions">
+          <button
+            type="button"
+            className="bt-val-action confirm"
+            title="Confirmar"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={commit}
+          >
+            <Check size={13} strokeWidth={2.5} />
+          </button>
+          <button
+            type="button"
+            className="bt-val-action cancel"
+            title="Desfazer"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={cancel}
+          >
+            <X size={13} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -627,6 +689,7 @@ function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
         <button className="btn" type="button"><Download size={14}/> Exportar CSV</button>
       </div>
       <div className="bt-wrapper">
+        <div className="bt-scroll-viewport">
         <div className="bt-h-scroll">
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
@@ -752,6 +815,7 @@ function RealizedPage({ version, areas, groups, lines, actuals, setActuals }) {
           );
         })}
         </div>
+        </div>
       </div>
     </main>
   );
@@ -776,6 +840,7 @@ function ComparisonPage({ version, areas, groups, lines, actuals }) {
         <div><h1>Orçado × Realizado</h1><p>Comparativo acumulado até {MONTHS[REALIZED_THRU-1]} · {version.year} · {version.name}</p></div>
       </div>
       <div className="bt-wrapper comparison">
+        <div className="bt-scroll-viewport">
         <div className="bt-h-scroll">
         <div className="bt-head">
           <div className="bt-label-col">Área / Linha de custo</div>
@@ -939,6 +1004,7 @@ function ComparisonPage({ version, areas, groups, lines, actuals }) {
             </div>
           );
         })}
+        </div>
         </div>
       </div>
     </main>
