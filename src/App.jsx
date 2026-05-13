@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, Download, Check, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Download, Check, X, Minus } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -379,8 +379,10 @@ const INIT_AREAS = [...SEED_AREAS, ...V2_CLONE.areas];
 const INIT_GROUPS = [...SEED_GROUPS, ...V2_CLONE.groups];
 const INIT_LINES = [...SEED_LINES, ...V2_CLONE.lines];
 
+const FONT_SCALE_KEY = "2as-orcamento-font-scale";
+
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({ version, versions, setVersion, view, setView, sessionEmail, onSignOut }) {
+function Header({ version, versions, setVersion, view, setView, sessionEmail, onSignOut, fontScale, setFontScale }) {
   return (
     <header className="app-header">
       <div className="header-main">
@@ -393,6 +395,28 @@ function Header({ version, versions, setVersion, view, setView, sessionEmail, on
           ))}
         </nav>
         <div className="header-actions">
+          <div className="header-font-scale" title="Tamanho do texto na grade (até +2)">
+            <span className="header-font-scale-label">Texto</span>
+            <button
+              type="button"
+              className="header-font-btn"
+              disabled={fontScale <= 0}
+              onClick={() => setFontScale((s) => Math.max(0, s - 1))}
+              aria-label="Diminuir texto"
+            >
+              <Minus size={16} strokeWidth={2.2} />
+            </button>
+            <span className="header-font-scale-val" aria-live="polite">+{fontScale}</span>
+            <button
+              type="button"
+              className="header-font-btn"
+              disabled={fontScale >= 2}
+              onClick={() => setFontScale((s) => Math.min(2, s + 1))}
+              aria-label="Aumentar texto"
+            >
+              <Plus size={16} strokeWidth={2.2} />
+            </button>
+          </div>
           <select value={version.id} onChange={e=>setVersion(versions.find(v=>v.id===e.target.value))}>
             {versions.map(v=><option key={v.id} value={v.id}>{v.year} · {v.name}{v.status==="draft"?" (rascunho)":""}</option>)}
           </select>
@@ -1097,10 +1121,35 @@ export default function App({ sessionEmail=null, onSignOut=null }={}) {
   const [lines,   setLines]   = useState(INIT_LINES);
   const [actuals, setActuals] = useState(SEED_ACTUALS);
   const [view,    setView]    = useState("budget");
+  const [fontScale, setFontScale] = useState(() => {
+    try {
+      const raw = localStorage.getItem(FONT_SCALE_KEY);
+      const n = raw == null ? 0 : Number(raw);
+      return n >= 0 && n <= 2 ? n : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FONT_SCALE_KEY, String(fontScale));
+    } catch { /* ignore */ }
+  }, [fontScale]);
 
   return (
-    <div className="granatum-shell">
-      <Header version={version} versions={versions} setVersion={setVersion} view={view} setView={setView} sessionEmail={sessionEmail} onSignOut={onSignOut} />
+    <div className="granatum-shell" data-bt-font-scale={String(fontScale)}>
+      <Header
+        version={version}
+        versions={versions}
+        setVersion={setVersion}
+        view={view}
+        setView={setView}
+        sessionEmail={sessionEmail}
+        onSignOut={onSignOut}
+        fontScale={fontScale}
+        setFontScale={setFontScale}
+      />
       {view==="budget"     && <BudgetPage     version={version} areas={areas} setAreas={setAreas} groups={groups} setGroups={setGroups} lines={lines} setLines={setLines} />}
       {view==="realized"   && <RealizedPage   version={version} areas={areas} groups={groups} lines={lines} actuals={actuals} setActuals={setActuals} />}
       {view==="comparison" && <ComparisonPage version={version} areas={areas} groups={groups} lines={lines} actuals={actuals} />}
